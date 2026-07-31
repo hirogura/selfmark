@@ -1,0 +1,18 @@
+# ===== Python =====
+venv/
+__pycache__/
+*.pyc
+
+# ===== selfmark のデータ（個人情報を含むため絶対に公開しない） =====
+bookmarks.json
+favicon_cache/
+selfmark-export-*.json
+export*.json
+feeds_*.opml.xml
+*.opml
+*.opml.xml
+
+# ===== OS / エディタ =====
+.DS_Store
+Thumbs.db
+*.log
