@@ -13,7 +13,9 @@
 - お気に入り（スター）登録
 - ファビコン表示（自動取得・手動アップロード）
 - JSON エクスポート / インポート
-- Google Chrome 拡張機能からの追加・閲覧（下記参照）
+- Google Chrome 拡張機能からの追加・閲覧
+
+<img width="512" height="400" alt="Image" src="https://github.com/user-attachments/assets/e8649b5e-2d9b-498d-817f-b79ec5f1e191" />
 
 ## インストール方法（GitHub から）
 
@@ -59,6 +61,8 @@ sudo systemctl restart selfmark
 - 現在開いているタブの URL を 1 クリックで selfmark に追加
 - ブックマークの検索・閲覧（カテゴリー / お気に入りで分類表示）
 - ブラウザ上から編集・削除・お気に入り登録が可能
+
+<img width="443" height="512" alt="Image" src="https://github.com/user-attachments/assets/84f03329-058d-48e1-af34-6808a86024ab" />
 
 **導入方法**
 
@@ -127,3 +131,7 @@ sudo rm -rf /opt/lxd-data/selfmark-sub
 - ブックマークデータはインストール先の `bookmarks.json` に保存されます。
 - このリポジトリには個人情報（`bookmarks.json`・フィードの OPML 等）は含まれていません。`.gitignore` で除外しています。
 - バックアップは Web UI の「📥 エクスポート」で JSON ファイルをダウンロードできます。
+
+## ライセンス
+
+このプロジェクトは [MIT License](LICENSE) の下で公開されています。
