@@ -2,7 +2,7 @@
 # =============================================================================
 #  install-selfmark1.sh — selfmark（シンプルなブックマーク管理）インストールスクリプト
 #  - GitHub (https://github.com/hirogura/selfmark) からアプリ本体 (app.py) を取得
-#  - ポート 80 で公開
+#  - ポート 80 で公開（tailscale 接続環境では Tailscale Serve により HTTPS 化）
 #  - app.run() を threaded=True にして並列リクエスト処理に対応
 #  - 実行例: sudo bash install-selfmark1.sh
 # =============================================================================
@@ -15,6 +15,12 @@ INSTALL_DIR="/opt/lxd-data/selfmark"
 SERVICE_NAME="selfmark"
 SELFMARK_PORT=80
 VENV_DIR="${INSTALL_DIR}/venv"
+
+# ── Tailscale 検出（あれば Tailscale Serve で HTTPS 化する）──
+TS_HTTPS=0
+if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+  TS_HTTPS=1
+fi
 
 info()  { echo -e "\033[1;34m[INFO]\033[0m  $*"; }
 ok()    { echo -e "\033[1;32m[ OK ]\033[0m  $*"; }
@@ -91,6 +97,12 @@ fi
 ok "依存パッケージ OK"
 
 info "systemd ユニットファイルを生成..."
+# Tailscale Serve が TLS 終端用に <tailscale IP>:PORT をバインドできるよう、
+# tailscale 接続環境ではアプリを 127.0.0.1 のみで待機させる
+HOST_ENV=""
+if [[ "${TS_HTTPS}" == "1" ]]; then
+  HOST_ENV="Environment=HOST=127.0.0.1"
+fi
 cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
 [Unit]
 Description=selfmark Bookmark Manager
@@ -102,17 +114,22 @@ ExecStart=${VENV_DIR}/bin/python ${INSTALL_DIR}/app.py
 WorkingDirectory=${INSTALL_DIR}
 Restart=on-failure
 RestartSec=3
+${HOST_ENV}
 
 [Install]
 WantedBy=multi-user.target
 EOF
 ok "systemd ユニットファイル生成完了"
 
-if ss -tlnp 2>/dev/null | grep -q ":${SELFMARK_PORT} "; then
-  warn "ポート ${SELFMARK_PORT} は既に使用中です。停止します..."
-  fuser -k "${SELFMARK_PORT}/tcp" 2>/dev/null || true
-  sleep 1
-fi
+# ポート使用中のプロセスを停止（tailscaled は Tailscale Serve の TLS 終端で使用中のため除外）
+PIDS=$(ss -tlnp 2>/dev/null | grep ":${SELFMARK_PORT} " | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)
+for pid in ${PIDS}; do
+  CMDNAME=$(ps -o comm= -p "${pid}" 2>/dev/null || true)
+  if [[ -n "${CMDNAME}" && "${CMDNAME}" != "tailscaled" ]]; then
+    warn "ポート ${SELFMARK_PORT} を使用中 (${CMDNAME}, PID ${pid})。停止します..."
+    kill "${pid}" 2>/dev/null || true
+  fi
+done
 
 info "サービスを起動..."
 systemctl daemon-reload
@@ -148,16 +165,36 @@ if command -v tailscale >/dev/null 2>&1; then
   TS_IP=$(tailscale ip -4 2>/dev/null || true)
   TS_HOSTNAME=$(tailscale status --json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('Self', {}).get('DNSName', '').rstrip('.'))" 2>/dev/null || true)
 fi
+TS_DOMAIN="${TS_HOSTNAME}"
+
+# ── Tailscale Serve で HTTPS 公開（冪等）──
+if [[ "${TS_HTTPS}" == "1" && -n "${TS_DOMAIN}" ]]; then
+  info "Tailscale Serve (HTTPS) を設定..."
+  tailscale serve --https=${SELFMARK_PORT} off >/dev/null 2>&1 || true
+  if tailscale serve --bg --https=${SELFMARK_PORT} "http://127.0.0.1:${SELFMARK_PORT}" >/dev/null; then
+    ok "Tailscale Serve 設定完了"
+    info "HTTPS 応答を待機中（最大60秒・初回は証明書発行に時間がかかります）..."
+    for i in $(seq 1 12); do
+      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "https://${TS_DOMAIN}:${SELFMARK_PORT}/" 2>/dev/null || echo "000")
+      if [[ "${HTTP_CODE}" != "000" ]]; then ok "HTTPS 応答 OK (HTTP ${HTTP_CODE})"; break; fi
+      sleep 5
+    done
+  else
+    warn "tailscale serve の設定に失敗しました（HTTP のみで動作します）"
+  fi
+fi
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 ok "セットアップ完了！"
 echo ""
-if [[ -n "${TS_IP}" ]]; then
-  echo "  Web UI : http://${TS_IP}"
+if [[ "${TS_HTTPS}" == "1" && -n "${TS_DOMAIN}" ]]; then
+  echo "  Web UI : https://${TS_DOMAIN}:${SELFMARK_PORT}  (Tailscale Serve / HTTPS)"
+elif [[ -n "${TS_IP}" ]]; then
+  echo "  Web UI : http://${TS_IP}:${SELFMARK_PORT}"
 fi
-if [[ -n "${TS_HOSTNAME}" ]]; then
-  echo "  Web UI : http://${TS_HOSTNAME%%.*}  (MagicDNS)"
+if [[ "${TS_HTTPS}" != "1" && -n "${TS_HOSTNAME}" ]]; then
+  echo "  Web UI : http://${TS_HOSTNAME%%.*}:${SELFMARK_PORT}  (MagicDNS)"
 fi
 if [[ -z "${TS_IP}" && -z "${TS_HOSTNAME}" ]]; then
   warn "Tailscale IP/Hostname を取得できませんでした。"
