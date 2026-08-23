@@ -17,6 +17,8 @@ SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
 SUB_INSTALLER_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/install-selfmark-sub1.sh"
 SUB_PORT = "3357"
+EXTENSION_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/selfmark-extension-v15.zip"
+EXTENSION_FILENAME = "selfmark-extension-v15.zip"
 app = Flask(__name__)
 
 
@@ -187,6 +189,7 @@ HTML = r"""<!DOCTYPE html>
 <div class="header">
   <h1>selfmark</h1>
   <div class="header-admin">
+    <button class="btn-admin" id="btnExtension" title="Chrome拡張機能（selfmark-extension-v15.zip）をダウンロード" onclick="downloadExtension()">Google Chrome 拡張機能</button>
     <button class="btn-admin" id="btnInstallSub" title="閲覧専用ビュー（selfmark-sub）をポート3357にインストール" onclick="installSub()">selfmark-subインストール</button>
     <button class="btn-admin" id="btnAdminUpdate" title="GitHubから最新版を取得してアップデート" onclick="adminUpdate()">アップデート</button>
     <button class="btn-admin" id="btnAdminRestart" title="selfmarkサービスを再起動" onclick="adminRestart()">再起動</button>
@@ -1085,6 +1088,16 @@ async function installSub() {
   b.disabled = false; b.textContent = 'selfmark-subインストール';
 }
 
+function downloadExtension() {
+  const a = document.createElement('a');
+  a.href = '/api/extension/download';
+  a.download = 'selfmark-extension-v15.zip';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showToast('Chrome 拡張機能（selfmark-extension-v15.zip）をダウンロードしました');
+}
+
 async function adminUpdate() {
   if (!confirm('GitHub から最新版を取得してアップデートしますか？\n完了後、サービスは自動で再起動されます。')) return;
   const b = document.getElementById('btnAdminUpdate');
@@ -1196,6 +1209,26 @@ def _delayed_restart(delay=1.0):
 @app.route("/api/version")
 def api_version():
     return jsonify({"version": APP_VERSION})
+
+
+@app.route("/api/extension/download")
+def api_extension_download():
+    data = b""
+    try:
+        req = urllib.request.Request(EXTENSION_URL, headers={"User-Agent": "selfmark-updater"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = resp.read()
+    except Exception:
+        pass
+    if not data:
+        local = os.path.join(os.path.dirname(APP_PATH), EXTENSION_FILENAME)
+        if os.path.exists(local):
+            with open(local, "rb") as f:
+                data = f.read()
+    if not data:
+        return jsonify({"error": "拡張機能の取得に失敗しました"}), 500
+    return Response(data, content_type="application/zip",
+                    headers={"Content-Disposition": f"attachment; filename={EXTENSION_FILENAME}"})
 
 
 @app.route("/api/admin/restart", methods=["POST"])
