@@ -1225,6 +1225,6 @@ def api_admin_update():
 
 if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "80"))
+    port = int(os.environ.get("PORT", "3356"))
     print(f"[INFO] selfmark: http://{host}:{port}", flush=True)
     app.run(host=host, port=port, debug=False, threaded=True)

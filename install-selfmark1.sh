@@ -2,7 +2,7 @@
 # =============================================================================
 #  install-selfmark1.sh — selfmark（シンプルなブックマーク管理）インストールスクリプト
 #  - GitHub (https://github.com/hirogura/selfmark) からアプリ本体 (app.py) を取得
-#  - ポート 80 で公開（tailscale 接続環境では Tailscale Serve により HTTPS 化）
+#  - ポート 3356 で公開（tailscale 接続環境では Tailscale Serve により HTTPS 化）
 #  - app.run() を threaded=True にして並列リクエスト処理に対応
 #  - 実行例: sudo bash install-selfmark1.sh
 # =============================================================================
@@ -13,7 +13,7 @@ GITHUB_REPO="https://github.com/hirogura/selfmark"
 GITHUB_RAW="https://raw.githubusercontent.com/hirogura/selfmark/main"
 INSTALL_DIR="/opt/lxd-data/selfmark"
 SERVICE_NAME="selfmark"
-SELFMARK_PORT=80
+SELFMARK_PORT=3356
 VENV_DIR="${INSTALL_DIR}/venv"
 
 # ── Tailscale 検出（あれば Tailscale Serve で HTTPS 化する）──
@@ -114,6 +114,7 @@ ExecStart=${VENV_DIR}/bin/python ${INSTALL_DIR}/app.py
 WorkingDirectory=${INSTALL_DIR}
 Restart=on-failure
 RestartSec=3
+Environment=PORT=${SELFMARK_PORT}
 ${HOST_ENV}
 
 [Install]

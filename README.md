@@ -3,7 +3,7 @@
 シンプルなブックマーク管理 Web アプリです。Flask 製の単一ファイル (`app.py`) で動作し、LXD コンテナなどの Ubuntu 環境に 1 コマンドでインストールできます。
 
 - GitHub: https://github.com/hirogura/selfmark
-- ポート 80 で公開（tailscale 接続環境ではインストーラが自動で Tailscale Serve を設定し、`https://<hostname>.<tailnet>.ts.net:80` で HTTPS アクセス可能。アプリ本体は `127.0.0.1` のみで待機し、TLS 終端は tailscaled が行います）
+- ポート 3356 で公開（tailscale 接続環境ではインストーラが自動で Tailscale Serve を設定し、`https://<hostname>.<tailnet>.ts.net:3356` で HTTPS アクセス可能。アプリ本体は `127.0.0.1` のみで待機し、TLS 終端は tailscaled が行います）
 - ブックマークデータは `/opt/lxd-data/selfmark/bookmarks.json` に保存されます（このファイルは **GitHub には公開されません**）
 
 ## 主な機能
