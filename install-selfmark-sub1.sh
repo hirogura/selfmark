@@ -10,8 +10,14 @@
 
 set -e
 
+# ── Tailscale 検出（あれば Tailscale Serve で HTTPS 化する）──
+TS_HTTPS=0
+if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+  TS_HTTPS=1
+fi
+
 BOOKMARKS_JSON="${1:-/opt/lxd-data/selfmark/bookmarks.json}"
-PORT="${2:-81}"
+PORT="${2:-3357}"
 INSTALL_DIR="/opt/lxd-data/selfmark-sub"
 SERVICE_NAME="selfmark-sub"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -31,11 +37,19 @@ cat > "$INSTALL_DIR/app.py" << 'APPEOF'
 import json
 import os
 import socket
+import subprocess
 import sys
+import threading
+import time
+import urllib.request
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
 DATA_FILE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "selfmark", "bookmarks.json")
+APP_VERSION = "1.0.0"
+SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark-sub")
+INSTALLER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "install-selfmark-sub1.sh")
+INSTALLER_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/install-selfmark-sub1.sh"
 
 _cache_html = None
 _cache_mtime = 0
@@ -50,6 +64,54 @@ ICON_PATHS = {
 
 ICON_DATA_URI = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23f5f5f5'/><text x='50' y='65' font-size='42' font-weight='bold' fill='%230f0f23' text-anchor='middle' font-family='Arial'>S</text></svg>"
 
+# 管理UI用の追加CSS・JS（通常文字列なので波括弧はそのまま使える）
+ADMIN_CSS = """
+.topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.topbar h1 { margin-bottom: 0; }
+.header-admin { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-left: 12px; }
+.btn-admin { padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid #ccc; background: #fff; color: #333; transition: background .15s ease; white-space: nowrap; }
+.btn-admin:hover { background: #e8e8f0; }
+.btn-admin:disabled { opacity: .5; cursor: wait; }
+.version-label { font-size: 12px; font-weight: 600; color: #888; white-space: nowrap; }
+"""
+
+ADMIN_JS = """
+async function waitForServer(maxMs = 60000) {
+  const deadline = Date.now() + maxMs;
+  await new Promise(r => setTimeout(r, 2000));
+  while (Date.now() < deadline) {
+    try { const res = await fetch('/api/version', { cache: 'no-store' }); if (res.ok) return true; } catch(e) {}
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  return false;
+}
+
+async function adminRestart() {
+  if (!confirm('selfmark-sub サービスを再起動しますか？')) return;
+  const b = document.getElementById('btnAdminRestart');
+  b.disabled = true; b.textContent = '再起動中…';
+  try { await fetch('/api/admin/restart', { method: 'POST' }); } catch(e) {}
+  await waitForServer();
+  location.reload();
+}
+
+async function adminUpdate() {
+  if (!confirm('GitHub から最新版を取得してアップデートしますか？\\n完了後、サービスは自動で再起動されます。')) return;
+  const b = document.getElementById('btnAdminUpdate');
+  b.disabled = true; b.textContent = '更新中…';
+  try {
+    const res = await fetch('/api/admin/update', { method: 'POST' });
+    const d = await res.json();
+    if (!res.ok || d.error) { alert('アップデートに失敗しました\\n' + (d.error || '')); b.disabled = false; b.textContent = 'アップデート'; return; }
+    b.textContent = '再起動中…';
+  } catch(e) { alert('アップデートに失敗しました'); b.disabled = false; b.textContent = 'アップデート'; return; }
+  await waitForServer(120000);
+  location.reload();
+}
+
+fetch('/api/version').then(res => res.json()).then(v => { document.getElementById('appVersion').textContent = 'v.' + v.version; }).catch(() => {});
+"""
+
 
 def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace('"', "&quot;").replace("'", "&#39;")
@@ -60,7 +122,7 @@ def build_html():
         with open(DATA_FILE, "r") as f:
             data = json.load(f)
     except Exception:
-        return "<html><body><p>bookmarks.json not found</p></body></html>"
+        data = {}
 
     bookmarks = data.get("bookmarks", [])
     cat_order = data.get("cat_order", [])
@@ -121,16 +183,33 @@ ul {{ list-style: none; }}
 li {{ margin-bottom: 2px; }}
 a {{ display: block; padding: 10px 12px; background: #fff; border-radius: 8px; text-decoration: none; color: #333; font-size: 15px; border: 1px solid #eee; }}
 a:active {{ background: #e8e8f0; }}
+{ADMIN_CSS}
 </style>
 </head>
 <body>
+<div class="topbar">
 <h1>selfmark</h1>
+<div class="header-admin">
+<button class="btn-admin" id="btnAdminUpdate" title="GitHubから最新版を取得してアップデート" onclick="adminUpdate()">アップデート</button>
+<button class="btn-admin" id="btnAdminRestart" title="selfmark-subサービスを再起動" onclick="adminRestart()">再起動</button>
+<span class="version-label" id="appVersion"></span>
+</div>
+</div>
 {body}
+<script>{ADMIN_JS}</script>
 </body>
 </html>"""
 
 
 class Handler(SimpleHTTPRequestHandler):
+    def _send_json(self, obj, code=200):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         global _cache_html, _cache_mtime
 
@@ -143,10 +222,13 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             return
 
+        if path == "/api/version":
+            return self._send_json({"version": APP_VERSION})
+
         try:
             mtime = os.path.getmtime(DATA_FILE)
         except Exception:
-            mtime = 0
+            mtime = -1
         if mtime != _cache_mtime:
             _cache_html = build_html().encode("utf-8")
             _cache_mtime = mtime
@@ -156,6 +238,59 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(_cache_html)
+
+    def do_POST(self):
+        path = self.path.split("?")[0]
+        length = int(self.headers.get("Content-Length") or 0)
+        if length:
+            self.rfile.read(length)
+
+        if path == "/api/admin/restart":
+            def _restart():
+                time.sleep(0.8)
+                subprocess.run(["systemctl", "restart", SERVICE_NAME],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            threading.Thread(target=_restart, daemon=True).start()
+            return self._send_json({"ok": True})
+
+        if path == "/api/admin/update":
+            try:
+                req = urllib.request.Request(INSTALLER_URL, headers={"User-Agent": "selfmark-updater"})
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    new_src = resp.read().decode("utf-8")
+                if not new_src.lstrip().startswith("#!/bin/bash"):
+                    return self._send_json({"error": "ダウンロードしたスクリプトが不正です"}, 500)
+                current = ""
+                if os.path.exists(INSTALLER_PATH):
+                    try:
+                        with open(INSTALLER_PATH, encoding="utf-8") as f:
+                            current = f.read()
+                    except Exception:
+                        current = ""
+                if new_src == current:
+                    return self._send_json({"ok": True, "updated": False, "message": "すでに最新版です"})
+                tmp_path = INSTALLER_PATH + ".new"
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    f.write(new_src)
+                chk = subprocess.run(["bash", "-n", tmp_path], capture_output=True)
+                if chk.returncode != 0:
+                    os.remove(tmp_path)
+                    return self._send_json({"error": "ダウンロードしたインストーラの構文チェックに失敗しました"}, 500)
+                os.replace(tmp_path, INSTALLER_PATH)
+            except Exception as e:
+                return self._send_json({"error": str(e)}, 500)
+
+            args = [INSTALLER_PATH] + sys.argv[1:]
+
+            def _apply():
+                time.sleep(1.0)
+                subprocess.run(["bash"] + args,
+                               stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            threading.Thread(target=_apply, daemon=True).start()
+            return self._send_json({"ok": True, "updated": True, "message": "アップデート完了。サービスを再起動します"})
+
+        return self._send_json({"error": "Not found"}, 404)
 
     def log_message(self, format, *args):
         pass
@@ -169,15 +304,24 @@ class DualStackHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[2]) if len(sys.argv) > 2 else 81
-    print(f"[INFO] selfmark-view: http://[::]:{port}", flush=True)
-
-    DualStackHTTPServer(("", port), Handler).serve_forever()
+    port = int(sys.argv[2]) if len(sys.argv) > 2 else int(os.environ.get("PORT", "3357"))
+    host = os.environ.get("HOST", "")
+    print(f"[INFO] selfmark-view: http://{host or '[::]'}:{port}", flush=True)
+    if host:
+        HTTPServer((host, port), Handler).serve_forever()
+    else:
+        DualStackHTTPServer(("", port), Handler).serve_forever()
 APPEOF
 chmod +x "$INSTALL_DIR/app.py"
 echo "  app.py を書き込みました"
 
 echo "[2/3] systemdサービス設定: $SERVICE_FILE"
+# Tailscale Serve が TLS 終端用に <tailscale IP>:PORT をバインドできるよう、
+# tailscale 接続環境ではアプリを 127.0.0.1 のみで待機させる
+HOST_ENV=""
+if [[ "${TS_HTTPS}" == "1" ]]; then
+  HOST_ENV="Environment=HOST=127.0.0.1"
+fi
 cat > "$SERVICE_FILE" << SVCEOF
 [Unit]
 Description=selfmark-sub (read-only bookmark viewer)
@@ -188,6 +332,8 @@ Type=simple
 ExecStart=/usr/bin/python3 $INSTALL_DIR/app.py $BOOKMARKS_JSON $PORT
 Restart=on-failure
 RestartSec=5
+Environment=PORT=$PORT
+${HOST_ENV}
 
 [Install]
 WantedBy=multi-user.target
@@ -201,12 +347,32 @@ systemctl restart "$SERVICE_NAME"
 
 sleep 1
 if systemctl is-active --quiet "$SERVICE_NAME"; then
+    # ── Tailscale Serve で HTTPS 公開（冪等）──
+    TS_DOMAIN=""
+    if [[ "${TS_HTTPS}" == "1" ]]; then
+        TS_DOMAIN=$(tailscale status --json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('Self', {}).get('DNSName', '').rstrip('.'))" 2>/dev/null || true)
+        echo "[Tailscale] Serve (HTTPS) を設定..."
+        tailscale serve --https=$PORT off >/dev/null 2>&1 || true
+        if tailscale serve --bg --https=$PORT "http://127.0.0.1:$PORT" >/dev/null; then
+            for i in $(seq 1 12); do
+                HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "https://${TS_DOMAIN}:${PORT}/" 2>/dev/null || echo "000")
+                [[ "${HTTP_CODE}" != "000" ]] && break
+                sleep 5
+            done
+        else
+            echo "[WARN] tailscale serve の設定に失敗しました（HTTP のみで動作します）"
+        fi
+    fi
     echo ""
     echo "=== 完了 ==="
-    echo "URL: http://$(hostname -I | awk '{print $1}'):$PORT/"
+    if [[ "${TS_HTTPS}" == "1" && -n "${TS_DOMAIN}" ]]; then
+        echo "URL: https://${TS_DOMAIN}:${PORT}/  (Tailscale Serve / HTTPS)"
+    else
+        echo "URL: http://$(hostname -I | awk '{print $1}'):$PORT/"
+    fi
     echo "状態: systemctl status $SERVICE_NAME"
     echo "停止: systemctl stop $SERVICE_NAME"
-    echo "解除: systemctl disable --now $SERVICE_NAME"
+    echo "解除: systemctl disable --now $SERVICE_NAME && tailscale serve --https=$PORT off"
 else
     echo "[ERROR] サービス起動に失敗"
     systemctl status "$SERVICE_NAME" --no-pager

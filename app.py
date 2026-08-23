@@ -15,6 +15,8 @@ APP_PATH = os.path.abspath(__file__)
 APP_VERSION = "1.0.0"
 SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
+SUB_INSTALLER_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/install-selfmark-sub1.sh"
+SUB_PORT = "3357"
 app = Flask(__name__)
 
 
@@ -185,6 +187,7 @@ HTML = r"""<!DOCTYPE html>
 <div class="header">
   <h1>selfmark</h1>
   <div class="header-admin">
+    <button class="btn-admin" id="btnInstallSub" title="閲覧専用ビュー（selfmark-sub）をポート3357にインストール" onclick="installSub()">selfmark-subインストール</button>
     <button class="btn-admin" id="btnAdminUpdate" title="GitHubから最新版を取得してアップデート" onclick="adminUpdate()">アップデート</button>
     <button class="btn-admin" id="btnAdminRestart" title="selfmarkサービスを再起動" onclick="adminRestart()">再起動</button>
     <span class="version-label" id="appVersion"></span>
@@ -1069,6 +1072,19 @@ async function adminRestart() {
   location.reload();
 }
 
+async function installSub() {
+  if (!confirm('selfmark-sub（閲覧専用ビュー・ポート3357）をインストールしますか？\n既にインストール済みの場合は最新版に入れ替わります。')) return;
+  const b = document.getElementById('btnInstallSub');
+  b.disabled = true; b.textContent = 'インストール中…';
+  try {
+    const res = await fetch('/api/admin/install-sub', { method: 'POST' });
+    const d = await res.json();
+    if (!res.ok || d.error) { alert('インストールに失敗しました\n' + (d.error || '')); }
+    else { alert(d.message || 'selfmark-sub をインストールしました'); }
+  } catch(e) { alert('インストールに失敗しました'); }
+  b.disabled = false; b.textContent = 'selfmark-subインストール';
+}
+
 async function adminUpdate() {
   if (!confirm('GitHub から最新版を取得してアップデートしますか？\n完了後、サービスは自動で再起動されます。')) return;
   const b = document.getElementById('btnAdminUpdate');
@@ -1221,6 +1237,50 @@ def api_admin_update():
 
     _delayed_restart()
     return jsonify({"ok": True, "updated": True, "message": "アップデート完了。サービスを再起動します"})
+
+
+@app.route("/api/admin/install-sub", methods=["POST"])
+def api_admin_install_sub():
+    try:
+        req = urllib.request.Request(SUB_INSTALLER_URL, headers={"User-Agent": "selfmark-updater"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            src = resp.read().decode("utf-8")
+    except Exception as e:
+        return jsonify({"error": f"GitHubからの取得に失敗しました: {e}"}), 500
+    if not src.lstrip().startswith("#!/bin/bash"):
+        return jsonify({"error": "ダウンロードしたインストーラが不正です"}), 500
+
+    installer_path = os.path.join(os.path.dirname(APP_PATH), "install-selfmark-sub1.sh")
+    tmp_path = installer_path + ".new"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.write(src)
+    chk = subprocess.run(["bash", "-n", tmp_path], capture_output=True)
+    if chk.returncode != 0:
+        os.remove(tmp_path)
+        return jsonify({"error": "インストーラの構文チェックに失敗しました"}), 500
+    os.replace(tmp_path, installer_path)
+
+    try:
+        r = subprocess.run(["bash", installer_path, DATA_FILE, SUB_PORT],
+                           capture_output=True, text=True, timeout=180,
+                           stdin=subprocess.DEVNULL)
+    except Exception as e:
+        return jsonify({"error": f"インストーラの実行に失敗しました: {e}"}), 500
+    if r.returncode != 0:
+        detail = (r.stderr or r.stdout or "").strip()[-800:]
+        return jsonify({"error": detail or "インストーラの実行に失敗しました"}), 500
+
+    url = ""
+    try:
+        out = subprocess.run(["tailscale", "status", "--json"],
+                             capture_output=True, text=True, timeout=10).stdout
+        domain = json.loads(out).get("Self", {}).get("DNSName", "").rstrip(".")
+        if domain:
+            url = f"https://{domain}:{SUB_PORT}"
+    except Exception:
+        pass
+    msg = "selfmark-sub のインストールが完了しました" + (f"（{url}）" if url else "")
+    return jsonify({"ok": True, "url": url, "message": msg})
 
 
 if __name__ == "__main__":

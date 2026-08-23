@@ -83,18 +83,18 @@ sudo systemctl restart selfmark
 
 ## selfmark-sub（閲覧専用ビュー）のインストール方法
 
-selfmark-sub は `bookmarks.json` を読み込んで、編集不可の軽量な閲覧専用ページを表示します。既定のポートは 81 です。
+selfmark-sub は `bookmarks.json` を読み込んで、編集不可の軽量な閲覧専用ページを表示します。既定のポートは 3357 です。tailscale 接続環境ではインストーラが自動で Tailscale Serve を設定し、HTTPS で公開します。
 
 ```bash
 curl -fsSL -o install-selfmark-sub1.sh \
   https://raw.githubusercontent.com/hirogura/selfmark/main/install-selfmark-sub1.sh
 
-sudo bash install-selfmark-sub1.sh /opt/lxd-data/selfmark/bookmarks.json 81
+sudo bash install-selfmark-sub1.sh /opt/lxd-data/selfmark/bookmarks.json 3357
 ```
 
-引数: 第 1 引数 = `bookmarks.json` のパス（既定: `/opt/lxd-data/selfmark/bookmarks.json`）、第 2 引数 = ポート番号（既定: 81）。
+引数: 第 1 引数 = `bookmarks.json` のパス（既定: `/opt/lxd-data/selfmark/bookmarks.json`）、第 2 引数 = ポート番号（既定: 3357）。
 
-インストール後、表示された URL（`http://<ホストIP>:81/`）にアクセスしてください。
+インストール後、tailscale 接続環境では `https://<hostname>.<tailnet>.ts.net:3357/` でアクセスできます（アプリ本体は `127.0.0.1` のみで待機し、TLS 終端は tailscaled が行います）。
 
 **管理コマンド**
 
