@@ -12,6 +12,9 @@ feeds_*.opml.xml
 *.opml
 *.opml.xml
 
+# ===== アップデート時のバックアップ =====
+*.bak
+
 # ===== OS / エディタ =====
 .DS_Store
 Thumbs.db

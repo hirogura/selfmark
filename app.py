@@ -3,9 +3,18 @@
 
 import json
 import os
+import subprocess
+import sys
+import shutil
+import threading
+import time
 from flask import Flask, Response, request, jsonify
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bookmarks.json")
+APP_PATH = os.path.abspath(__file__)
+APP_VERSION = "1.0.0"
+SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
+GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
 app = Flask(__name__)
 
 
@@ -79,6 +88,11 @@ HTML = r"""<!DOCTYPE html>
   body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #1a1a2e; line-height: 1.5; }
   .header { background: #0f0f23; color: white; padding: 20px 32px; display: flex; align-items: center; gap: 16px; }
   .header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+  .header-admin { margin-left: auto; display: flex; align-items: center; gap: 10px; padding-left: 16px; }
+  .btn-admin { padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid rgba(255,255,255,.25); background: transparent; color: #e8e8f0; transition: all 0.15s ease; white-space: nowrap; }
+  .btn-admin:hover { background: rgba(255,255,255,.12); }
+  .btn-admin:disabled { opacity: .5; cursor: wait; }
+  .version-label { font-size: 12px; font-weight: 600; color: #8a8aa8; white-space: nowrap; }
   .container { max-width: 960px; margin: 32px auto; padding: 0 24px; }
   .toolbar { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; align-items: center; }
   .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; letter-spacing: 0.3px; }
@@ -170,6 +184,11 @@ HTML = r"""<!DOCTYPE html>
 <body>
 <div class="header">
   <h1>selfmark</h1>
+  <div class="header-admin">
+    <button class="btn-admin" id="btnAdminUpdate" title="GitHubから最新版を取得してアップデート" onclick="adminUpdate()">アップデート</button>
+    <button class="btn-admin" id="btnAdminRestart" title="selfmarkサービスを再起動" onclick="adminRestart()">再起動</button>
+    <span class="version-label" id="appVersion"></span>
+  </div>
 </div>
 <div class="container">
   <div class="toolbar">
@@ -1031,6 +1050,41 @@ window.addEventListener('beforeunload', e => {
   if (dirty) { e.preventDefault(); e.returnValue = ''; }
 });
 
+async function waitForServer(maxMs = 60000) {
+  const deadline = Date.now() + maxMs;
+  await new Promise(r => setTimeout(r, 2000));
+  while (Date.now() < deadline) {
+    try { const res = await fetch('/api/version', { cache: 'no-store' }); if (res.ok) return true; } catch(e) {}
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  return false;
+}
+
+async function adminRestart() {
+  if (!confirm('selfmark サービスを再起動しますか？')) return;
+  const b = document.getElementById('btnAdminRestart');
+  b.disabled = true; b.textContent = '再起動中…';
+  try { await fetch('/api/admin/restart', { method: 'POST' }); } catch(e) {}
+  await waitForServer();
+  location.reload();
+}
+
+async function adminUpdate() {
+  if (!confirm('GitHub から最新版を取得してアップデートしますか？\n完了後、サービスは自動で再起動されます。')) return;
+  const b = document.getElementById('btnAdminUpdate');
+  b.disabled = true; b.textContent = '更新中…';
+  try {
+    const res = await fetch('/api/admin/update', { method: 'POST' });
+    const d = await res.json();
+    if (!res.ok || d.error) { alert('アップデートに失敗しました\n' + (d.error || '')); b.disabled = false; b.textContent = 'アップデート'; return; }
+  } catch(e) { alert('アップデートに失敗しました'); b.disabled = false; b.textContent = 'アップデート'; return; }
+  b.textContent = '再起動中…';
+  await waitForServer(120000);
+  location.reload();
+}
+
+fetch('/api/version').then(res => res.json()).then(v => { document.getElementById('appVersion').textContent = 'v.' + v.version; }).catch(() => {});
+
 refresh();
 </script>
 </body>
@@ -1115,6 +1169,62 @@ def api_favicon_fetch_all():
     return jsonify({"ok": True})
 
 
+def _delayed_restart(delay=1.0):
+    def _run():
+        time.sleep(delay)
+        subprocess.run(["systemctl", "restart", SERVICE_NAME],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    threading.Thread(target=_run, daemon=True).start()
+
+
+@app.route("/api/version")
+def api_version():
+    return jsonify({"version": APP_VERSION})
+
+
+@app.route("/api/admin/restart", methods=["POST"])
+def api_admin_restart():
+    _delayed_restart()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/update", methods=["POST"])
+def api_admin_update():
+    try:
+        req = urllib.request.Request(GITHUB_RAW_APP, headers={"User-Agent": "selfmark-updater"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            new_src = resp.read().decode("utf-8")
+    except Exception as e:
+        return jsonify({"error": f"GitHubからの取得に失敗しました: {e}"}), 500
+
+    try:
+        with open(APP_PATH, encoding="utf-8") as f:
+            current_src = f.read()
+    except Exception:
+        current_src = ""
+    if new_src == current_src:
+        return jsonify({"ok": True, "updated": False, "message": "すでに最新版です"})
+
+    tmp_path = APP_PATH + ".new"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.write(new_src)
+    chk = subprocess.run([sys.executable, "-m", "py_compile", tmp_path], capture_output=True)
+    shutil.rmtree(os.path.join(os.path.dirname(tmp_path), "__pycache__"), ignore_errors=True)
+    if chk.returncode != 0:
+        os.remove(tmp_path)
+        return jsonify({"error": "ダウンロードしたapp.pyの構文チェックに失敗しました"}), 500
+    try:
+        shutil.copy2(APP_PATH, APP_PATH + ".bak")
+        os.replace(tmp_path, APP_PATH)
+    except Exception as e:
+        return jsonify({"error": f"ファイルの置換に失敗しました: {e}"}), 500
+
+    _delayed_restart()
+    return jsonify({"ok": True, "updated": True, "message": "アップデート完了。サービスを再起動します"})
+
+
 if __name__ == "__main__":
-    print("[INFO] selfmark: http://127.0.0.1:80", flush=True)
-    app.run(host="0.0.0.0", port=80, debug=False, threaded=True)
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "80"))
+    print(f"[INFO] selfmark: http://{host}:{port}", flush=True)
+    app.run(host=host, port=port, debug=False, threaded=True)
