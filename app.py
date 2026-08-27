@@ -76,7 +76,11 @@ def fetch_and_cache_favicon(url):
                 with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
                     data = resp.read(65536)
                     if data and len(data) > 0:
-                        return resize_and_save_image(data, get_favicon_path(url))
+                        try:
+                            resize_and_save_image(data, get_favicon_path(url))
+                            return True
+                        except Exception:
+                            continue
             except Exception:
                 continue
     except Exception:
