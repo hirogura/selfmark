@@ -41,6 +41,15 @@ else
   die "GitHub からのダウンロードに失敗しました: ${GITHUB_RAW}/app.py"
 fi
 
+info "GitHub からアイコンファイルをダウンロード..."
+for ICON_FILE in favicon.png selfmark.png; do
+  if curl -fsSL --connect-timeout 10 --max-time 30 "${GITHUB_RAW}/${ICON_FILE}" -o "${INSTALL_DIR}/${ICON_FILE}"; then
+    ok "アイコン ダウンロード完了: ${ICON_FILE}"
+  else
+    warn "アイコンのダウンロードに失敗しました: ${ICON_FILE}（スキップします）"
+  fi
+done
+
 NEED_VENV_SETUP=false
 if [[ ! -f "${VENV_DIR}/bin/python" ]]; then
   NEED_VENV_SETUP=true

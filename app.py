@@ -15,6 +15,7 @@ APP_PATH = os.path.abspath(__file__)
 APP_VERSION = "1.0.0"
 SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/hirogura/selfmark/main"
 SUB_INSTALLER_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/install-selfmark-sub1.sh"
 SUB_PORT = "3357"
 EXTENSION_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/selfmark-extension-v15.zip"
@@ -1291,6 +1292,19 @@ def api_admin_update():
         os.replace(tmp_path, APP_PATH)
     except Exception as e:
         return jsonify({"error": f"ファイルの置換に失敗しました: {e}"}), 500
+
+    install_dir = os.path.dirname(APP_PATH)
+    for icon_file in ["favicon.png", "selfmark.png"]:
+        try:
+            icon_url = f"{GITHUB_RAW_BASE}/{icon_file}"
+            req = urllib.request.Request(icon_url, headers={"User-Agent": "selfmark-updater"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                icon_data = resp.read()
+            if icon_data:
+                with open(os.path.join(install_dir, icon_file), "wb") as f:
+                    f.write(icon_data)
+        except Exception:
+            pass
 
     _delayed_restart()
     return jsonify({"ok": True, "updated": True, "message": "アップデート完了。サービスを再起動します"})

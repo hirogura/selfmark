@@ -62,6 +62,11 @@ ICON_PATHS = {
     "/apple-touch-icon-precomposed.png",
 }
 
+ICON_FILES = {
+    "/favicon.png",
+    "/selfmark.png",
+}
+
 ICON_DATA_URI = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23f5f5f5'/><text x='50' y='65' font-size='42' font-weight='bold' fill='%230f0f23' text-anchor='middle' font-family='Arial'>S</text></svg>"
 
 # 管理UI用の追加CSS・JS（通常文字列なので波括弧はそのまま使える）
@@ -222,6 +227,22 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             return
 
+        if path in ICON_FILES:
+            file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), path.lstrip("/"))
+            if os.path.exists(file_path):
+                with open(file_path, "rb") as f:
+                    data = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            return
+
         if path == "/api/version":
             return self._send_json({"version": APP_VERSION})
 
@@ -314,6 +335,17 @@ if __name__ == "__main__":
 APPEOF
 chmod +x "$INSTALL_DIR/app.py"
 echo "  app.py を書き込みました"
+
+echo "[1.5/3] アイコンファイルをコピー..."
+SELFMARK_DIR="/opt/lxd-data/selfmark"
+for ICON_FILE in favicon.png selfmark.png; do
+  if [[ -f "${SELFMARK_DIR}/${ICON_FILE}" ]]; then
+    cp "${SELFMARK_DIR}/${ICON_FILE}" "${INSTALL_DIR}/${ICON_FILE}"
+    echo "  ${ICON_FILE} をコピーしました"
+  else
+    echo "  ${ICON_FILE} が見つかりません（スキップ）"
+  fi
+done
 
 echo "[2/3] systemdサービス設定: $SERVICE_FILE"
 # Tailscale Serve が TLS 終端用に <tailscale IP>:PORT をバインドできるよう、
