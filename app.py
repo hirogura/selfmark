@@ -68,7 +68,7 @@ def fetch_and_cache_favicon(url):
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-        for path in ["/favicon.ico", "/favicon.svg"]:
+        for path in ["/favicon.ico", "/favicon.png", "/favicon.svg"]:
             try:
                 favicon_url = origin + path
                 req = urllib.request.Request(favicon_url, headers={"User-Agent": "Mozilla/5.0"})
@@ -414,9 +414,10 @@ function renderCard(s, i, compact) {
   if (faviconMode >= 1) {
     const cachedSrc = '/api/favicon?url=' + encodeURIComponent(s.url);
     const liveIcoSrc = (() => { try { return new URL(s.url).origin + '/favicon.ico'; } catch(e) { return ''; }})();
+    const livePngSrc = (() => { try { return new URL(s.url).origin + '/favicon.png'; } catch(e) { return ''; }})();
     const liveSvgSrc = (() => { try { return new URL(s.url).origin + '/favicon.svg'; } catch(e) { return ''; }})();
     if (faviconMode === 2 && liveIcoSrc) {
-      faviconHtml = '<img loading="lazy" src="' + liveIcoSrc + '" width="24" height="24" style="border-radius:4px;cursor:pointer;" onclick="triggerFaviconUpload(\'' + escapedUrl + '\')" title="ファビコンを設定" onerror="this.src=\'' + liveSvgSrc + '\';this.onerror=function(){this.src=\'' + cachedSrc + '\';this.onerror=function(){this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'}}"><span style="display:none;cursor:pointer;font-size:20px;opacity:0.6;" onclick="triggerFaviconUpload(\'' + escapedUrl + '\')" title="ファビコンを設定">\u{1F4CC}</span>';
+      faviconHtml = '<img loading="lazy" src="' + liveIcoSrc + '" width="24" height="24" style="border-radius:4px;cursor:pointer;" onclick="triggerFaviconUpload(\'' + escapedUrl + '\')" title="ファビコンを設定" onerror="this.src=\'' + livePngSrc + '\';this.onerror=function(){this.src=\'' + liveSvgSrc + '\';this.onerror=function(){this.src=\'' + cachedSrc + '\';this.onerror=function(){this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'}}}"><span style="display:none;cursor:pointer;font-size:20px;opacity:0.6;" onclick="triggerFaviconUpload(\'' + escapedUrl + '\')" title="ファビコンを設定">\u{1F4CC}</span>';
     } else {
       faviconHtml = '<img loading="lazy" src="' + cachedSrc + '" width="24" height="24" style="border-radius:4px;cursor:pointer;" onclick="triggerFaviconUpload(\'' + escapedUrl + '\')" title="ファビコンを設定" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'"><span style="display:none;cursor:pointer;font-size:20px;opacity:0.6;" onclick="triggerFaviconUpload(\'' + escapedUrl + '\')" title="ファビコンを設定">\u{1F4CC}</span>';
     }
