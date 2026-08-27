@@ -1131,6 +1131,24 @@ def index():
     return Response(HTML, content_type="text/html")
 
 
+@app.route("/favicon.png")
+def serve_favicon():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "favicon.png")
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return Response(f.read(), content_type="image/png")
+    return "", 404
+
+
+@app.route("/selfmark.png")
+def serve_selfmark_icon():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfmark.png")
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return Response(f.read(), content_type="image/png")
+    return "", 404
+
+
 @app.route("/api/bookmarks", methods=["GET", "POST"])
 def api_bookmarks():
     if request.method == "POST":
