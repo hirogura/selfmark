@@ -88,8 +88,8 @@ HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230f0f23'/><text x='50' y='65' font-size='42' font-weight='bold' fill='%2300c9a7' text-anchor='middle' font-family='Arial'>S</text></svg>">
-<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230f0f23'/><text x='50' y='65' font-size='42' font-weight='bold' fill='%2300c9a7' text-anchor='middle' font-family='Arial'>S</text></svg>">
+<link rel="icon" href="/favicon.png">
+<link rel="apple-touch-icon" href="/selfmark.png">
 <title>selfmark</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
