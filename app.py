@@ -1150,6 +1150,25 @@ def serve_selfmark_icon():
     return "", 404
 
 
+@app.route("/apple-touch-icon.png")
+@app.route("/apple-touch-icon-precomposed.png")
+def serve_apple_touch_icon():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfmark.png")
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return Response(f.read(), content_type="image/png")
+    return "", 404
+
+
+@app.route("/favicon.ico")
+def serve_favicon_ico():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "favicon.png")
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return Response(f.read(), content_type="image/png")
+    return "", 404
+
+
 @app.route("/api/bookmarks", methods=["GET", "POST"])
 def api_bookmarks():
     if request.method == "POST":

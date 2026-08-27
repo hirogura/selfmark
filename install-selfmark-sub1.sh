@@ -57,14 +57,14 @@ _cache_mtime = 0
 # iOS/iPadOS Safariが自動で探索してくるアイコン系パス
 # (apple-touch-iconをHTML側で明示していても念のため即404で返す)
 ICON_PATHS = {
-    "/favicon.ico",
-    "/apple-touch-icon.png",
     "/apple-touch-icon-precomposed.png",
 }
 
 ICON_FILES = {
     "/favicon.png",
     "/selfmark.png",
+    "/favicon.ico",
+    "/apple-touch-icon.png",
 }
 
 ICON_DATA_URI = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23f5f5f5'/><text x='50' y='65' font-size='42' font-weight='bold' fill='%230f0f23' text-anchor='middle' font-family='Arial'>S</text></svg>"
@@ -176,8 +176,8 @@ def build_html():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>selfmark</title>
-<link rel="icon" href="{ICON_DATA_URI}">
-<link rel="apple-touch-icon" href="{ICON_DATA_URI}">
+<link rel="icon" href="/favicon.png">
+<link rel="apple-touch-icon" href="/selfmark.png">
 <style>
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; padding: 16px; max-width: 600px; margin: 0 auto; }}
