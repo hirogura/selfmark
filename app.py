@@ -12,7 +12,7 @@ from flask import Flask, Response, request, jsonify
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bookmarks.json")
 APP_PATH = os.path.abspath(__file__)
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/hirogura/selfmark/main"
@@ -23,26 +23,40 @@ EXTENSION_FILENAME = "selfmark-extension-v15.zip"
 app = Flask(__name__)
 
 
+DEFAULT_DATA = {"bookmarks": [], "cat_order": [], "starred_order": [], "categories": [], "favicon_mode": 0, "item_order": {}}
+
+_DATA_LOCK = threading.RLock()
+
+
 def load_data():
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            data = json.load(f)
-            data.setdefault("favicon_mode", 0)
-            data.setdefault("item_order", {})
-            return data
-    return {"bookmarks": [], "cat_order": [], "starred_order": [], "categories": [], "favicon_mode": 0, "item_order": {}}
+        try:
+            with open(DATA_FILE, "r") as f:
+                data = json.load(f)
+        except (OSError, ValueError, UnicodeDecodeError):
+            #破損時は空データで起動（上書き保存されるまで元ファイルは残る）
+            return dict(DEFAULT_DATA)
+        if not isinstance(data, dict):
+            return dict(DEFAULT_DATA)
+        for key, default in DEFAULT_DATA.items():
+            data.setdefault(key, default)
+        return data
+    return dict(DEFAULT_DATA)
 
 
 def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    tmp = DATA_FILE + ".tmp"
+    with _DATA_LOCK:
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, DATA_FILE)
 
 
 import hashlib
 import urllib.request
 import ssl
-import base64
-from pathlib import Path
 from PIL import Image
 from io import BytesIO
 
@@ -79,20 +93,49 @@ def unique_icon_filename(filename):
     return candidate
 
 
+def sanitize_svg(data):
+    """SVG内のスクリプト・イベントハンドラ・外部参照を簡易除去（完全ではない）"""
+    import re
+    try:
+        text = data.decode("utf-8")
+    except (UnicodeDecodeError, ValueError):
+        return None
+    # XML宣言・DOCTYPE（外部実体を持ち込める）を除去
+    text = re.sub(r"<\?.*?\?>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<!DOCTYPE.*?>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<!ENTITY.*?>", "", text, flags=re.DOTALL)
+    # script / handler 系要素を除去
+    text = re.sub(r"<script.*?</script\s*>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    for tag in ("handler", "listener", "foreignObject", "iframe", "embed", "object"):
+        text = re.sub(rf"<{tag}\b.*?</{tag}\s*>", "", text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(rf"<{tag}\b[^>]*/>", "", text, flags=re.IGNORECASE)
+    # on* イベント属性を除去
+    text = re.sub(r"""\s+on[a-zA-Z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)""", "", text)
+    # javascript: 疑似プロトコルを除去
+    text = re.sub(r"(?i)\b(javascript|data:text/html)\s*:", "removed:", text)
+    return text.encode("utf-8")
+
+
 def save_icon_file(data, filename):
+    """保存し、実際に書き込んだファイル名を返す（形式正規化で変わる場合あり）"""
     os.makedirs(ICON_DIR, exist_ok=True)
-    path = os.path.join(ICON_DIR, filename)
     stem, ext = os.path.splitext(filename)
-    # SVG / ICO はそのまま保存、その他は Pillow で 128px 以内にリサイズ試行
-    if ext.lower() in (".svg", ".ico"):
-        with open(path, "wb") as f:
+    ext = ext.lower()
+    if ext == ".svg":
+        cleaned = sanitize_svg(data)
+        if cleaned is None:
+            raise ValueError("invalid svg")
+        with open(os.path.join(ICON_DIR, filename), "wb") as f:
+            f.write(cleaned)
+        return filename
+    if ext == ".ico":
+        with open(os.path.join(ICON_DIR, filename), "wb") as f:
             f.write(data)
         return filename
     try:
         img = Image.open(BytesIO(data))
         img.thumbnail((128, 128), Image.LANCZOS)
-        # 透過保持のため RGBA で保存 (JPEG の場合は RGB に変換)
-        if ext.lower() in (".jpg", ".jpeg"):
+        if ext in (".jpg", ".jpeg"):
             if img.mode in ("RGBA", "LA", "P"):
                 bg = Image.new("RGB", img.size, (255, 255, 255))
                 if img.mode == "P":
@@ -102,13 +145,16 @@ def save_icon_file(data, filename):
                     img = bg
                 else:
                     img = img.convert("RGB")
-            img.save(path, "JPEG", quality=90)
-        else:
-            img.save(path, "PNG")
-        return filename
+            out_name = stem + ext
+            img.save(os.path.join(ICON_DIR, out_name), "JPEG", quality=90)
+            return out_name
+        # PNG/GIF/WebP等は透過保持のためPNG内容で保存し拡張子も.pngに統一
+        out_name = stem + ".png"
+        img.save(os.path.join(ICON_DIR, out_name), "PNG")
+        return out_name
     except Exception:
         # Pillow で読めなければ生データで保存
-        with open(path, "wb") as f:
+        with open(os.path.join(ICON_DIR, filename), "wb") as f:
             f.write(data)
         return filename
 
@@ -372,9 +418,11 @@ HTML = r"""<!DOCTYPE html>
     <div id="iconPickerEmpty" style="color:#aaa;font-size:13px;padding:12px 0;display:none;">アイコン置き場に画像がありません。先に「アイコン置き場」からアップロードしてください。</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
       <button class="btn btn-success" onclick="document.getElementById('iconPickerFileInput').click()">＋ 新規アップロードして設定</button>
+      <button class="btn btn-secondary" onclick="uploadFaviconForPickerTarget()" title="従来のファビコン直接アップロード（URL単位）">📎 ファビコンを直接アップロード</button>
       <button class="btn btn-secondary" onclick="clearBookmarkIcon()">アイコンを外す（ファビコン表示に戻す）</button>
       <button class="btn btn-secondary" onclick="closeIconPicker()">キャンセル</button>
     </div>
+    <div class="modal-desc" style="margin-top:8px;margin-bottom:0;">設定後は「💾 保存」を押してください（Escでも閉じられます）。</div>
   </div>
 </div>
 
@@ -391,12 +439,27 @@ let dragCatSrc = null;
 let dirty = false;
 let faviconMode = 0;
 let customIcons = [];
-let iconPickerTarget = null;
+let iconPickerTargetUrl = null;
 
 function escapeHtml(s) {
   const d = document.createElement('div');
   d.appendChild(document.createTextNode(s));
   return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function jsSq(s) {
+  // HTML属性内のシングルクォートJS文字列に埋め込む用。JSエスケープ後にHTMLエスケープする。
+  return String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '\\r')
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function safeHttpUrl(u) {
+  // javascript: 等の疑似スキームを排除し、http(s)のみ許可
+  try {
+    const p = new URL(u, location.origin);
+    if (p.protocol === 'http:' || p.protocol === 'https:') return escapeHtml(u);
+  } catch(e) {}
+  return '#';
 }
 
 function showToast(msg) {
@@ -500,6 +563,7 @@ function refreshIconList() {
   fetch('/api/icons').then(r => r.json()).then(data => {
     customIcons = (data.icons || []).map(x => x.name);
     renderIconStore();
+    if (document.getElementById('iconPickerModal').classList.contains('show')) renderIconPicker();
   }).catch(() => {});
 }
 
@@ -526,7 +590,7 @@ function renderIconStore() {
     <div class="icon-cell">
       <img loading="lazy" src="/icon/${encodeURIComponent(name)}" alt="${escapeHtml(name)}" title="${escapeHtml(name)}">
       <div class="icon-name">${escapeHtml(name)}</div>
-      <button class="icon-del" onclick="deleteStoreIcon('${escapeHtml(name).replace(/'/g, "\\'")}')">削除</button>
+      <button class="icon-del" onclick="deleteStoreIcon('${jsSq(name)}')">削除</button>
     </div>`).join('');
 }
 
@@ -560,6 +624,7 @@ function deleteStoreIcon(name) {
       if (changed) { markDirty(); saveAll(); }
       showToast('削除しました');
       refreshIconList();
+      renderIconPicker();
       render();
     } else {
       showToast('削除に失敗しました');
@@ -567,24 +632,33 @@ function deleteStoreIcon(name) {
   }).catch(() => showToast('削除に失敗しました'));
 }
 
+function resolvePickerIndex() {
+  // ピッカーを開いた後に並び替え・削除されても別ブックマークに当たらないようURLで特定
+  if (iconPickerTargetUrl === null) return -1;
+  return bookmarks.findIndex(s => s.url === iconPickerTargetUrl);
+}
+
 function openIconPicker(i) {
-  iconPickerTarget = i;
   const s = bookmarks[i];
-  const label = s ? `${s.name}（${s.url}）` : '';
-  document.getElementById('iconPickerTarget').textContent = label ? `対象: ${label}` : '';
+  if (!s) return;
+  iconPickerTargetUrl = s.url;
+  const label = `${s.name}（${s.url}）`;
+  document.getElementById('iconPickerTarget').textContent = `対象: ${label}`;
   document.getElementById('iconPickerModal').classList.add('show');
   renderIconPicker();
 }
 
 function closeIconPicker() {
   document.getElementById('iconPickerModal').classList.remove('show');
-  iconPickerTarget = null;
+  iconPickerTargetUrl = null;
 }
 
 function renderIconPicker() {
   const grid = document.getElementById('iconPickerGrid');
   const empty = document.getElementById('iconPickerEmpty');
-  const cur = (iconPickerTarget !== null && bookmarks[iconPickerTarget]) ? (bookmarks[iconPickerTarget].icon || '') : '';
+  if (!grid || !empty) return;
+  const idx = resolvePickerIndex();
+  const cur = idx >= 0 ? (bookmarks[idx].icon || '') : '';
   if (customIcons.length === 0) {
     grid.innerHTML = '';
     empty.style.display = 'block';
@@ -592,31 +666,37 @@ function renderIconPicker() {
   }
   empty.style.display = 'none';
   grid.innerHTML = customIcons.map(name => `
-    <div class="icon-cell ${name === cur ? 'selected' : ''}" onclick="selectBookmarkIcon('${escapeHtml(name).replace(/'/g, "\\'")}')">
-      <img loading="lazy" src="/icon/${encodeURIComponent(name)}" alt="${escapeHtml(name)}">
+    <div class="icon-cell ${name === cur ? 'selected' : ''}" onclick="selectBookmarkIcon('${jsSq(name)}')">
+      <img loading="lazy" draggable="false" src="/icon/${encodeURIComponent(name)}" alt="${escapeHtml(name)}">
       <div class="icon-name">${escapeHtml(name)}</div>
     </div>`).join('');
 }
 
 function selectBookmarkIcon(name) {
-  if (iconPickerTarget === null || !bookmarks[iconPickerTarget]) { closeIconPicker(); return; }
-  bookmarks[iconPickerTarget].icon = name;
+  const idx = resolvePickerIndex();
+  if (idx < 0) { closeIconPicker(); return; }
+  bookmarks[idx].icon = name;
   markDirty();
-  saveAll();
   closeIconPicker();
-  renderIconPicker();
   render();
-  showToast('アイコンを設定しました（保存済み）');
+  showToast('アイコンを設定しました。「💾 保存」を押してください');
 }
 
 function clearBookmarkIcon() {
-  if (iconPickerTarget === null || !bookmarks[iconPickerTarget]) { closeIconPicker(); return; }
-  delete bookmarks[iconPickerTarget].icon;
+  const idx = resolvePickerIndex();
+  if (idx < 0) { closeIconPicker(); return; }
+  delete bookmarks[idx].icon;
   markDirty();
-  saveAll();
   closeIconPicker();
   render();
-  showToast('アイコンを外しました（保存済み）');
+  showToast('アイコンを外しました。「💾 保存」を押してください');
+}
+
+function uploadFaviconForPickerTarget() {
+  // 従来のファビコン直接アップロード導線（URL単位のキャッシュに保存）
+  const idx = resolvePickerIndex();
+  if (idx < 0) { closeIconPicker(); return; }
+  triggerFaviconUpload(bookmarks[idx].url);
 }
 
 function handleIconPickerUpload(e) {
@@ -629,14 +709,18 @@ function handleIconPickerUpload(e) {
     .then(r => r.json())
     .then(data => {
       if (data.ok) {
-        customIcons.push(data.name);
-        renderIconStore();
-        renderIconPicker();
-        render();
+        refreshIconList();
         // そのまま対象ブックマークに設定
-        if (iconPickerTarget !== null && bookmarks[iconPickerTarget]) {
-          selectBookmarkIcon(data.name);
+        const idx = resolvePickerIndex();
+        if (idx >= 0) {
+          bookmarks[idx].icon = data.name;
+          markDirty();
+          closeIconPicker();
+          render();
+          showToast('アップロードして設定しました。「💾 保存」を押してください');
         } else {
+          closeIconPicker();
+          render();
           showToast('アップロードしました');
         }
       } else {
@@ -689,12 +773,12 @@ function renderCard(s, i, compact) {
   const starClass = isStarred ? 'on' : '';
   const starIcon = isStarred ? '\u2605' : '\u2606';
   const starAction = isStarred ? `unstarBookmark(${i})` : `starBookmark(${i})`;
-  const escapedUrl = escapeHtml(s.url).replace(/'/g, "\\'");
   // アイコン置き場で設定したカスタムアイコンを優先表示（左側サムネイル）
   let customIconHtml = '';
   if (s.icon) {
     const iconSrc = '/icon/' + encodeURIComponent(s.icon);
-    customIconHtml = '<img class="custom-icon icon-click" loading="lazy" src="' + iconSrc + '" title="アイコンを変更（' + escapeHtml(s.icon) + '）" onclick="openIconPicker(' + i + ')" onerror="this.style.display=\'none\'">';
+    customIconHtml = '<img class="custom-icon icon-click" loading="lazy" draggable="false" src="' + iconSrc + '" title="アイコンを変更（' + escapeHtml(s.icon) + '）" onclick="openIconPicker(' + i + ')" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'">'
+      + '<span style="display:none;font-size:20px;opacity:0.6;cursor:pointer;" onclick="openIconPicker(' + i + ')" title="アイコンを設定">\u{1F4CC}</span>';
   }
   let faviconHtml = '<span class="icon-click" style="font-size:20px;opacity:0.6;" onclick="openIconPicker(' + i + ')" title="アイコンを設定">\u{1F4CC}</span>';
   if (faviconMode >= 1) {
@@ -718,7 +802,7 @@ function renderCard(s, i, compact) {
       <div class="icon icon-bg">${iconHtml}</div>
       <div class="info">
         <div class="name">${escapeHtml(s.name)}</div>
-        <div class="url"><a href="${escapeHtml(s.url)}" target="_blank">${escapeHtml(s.url)}</a></div>
+        <div class="url"><a href="${safeHttpUrl(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.url)}</a></div>
       </div>
       <div class="actions">
         <button class="star-btn on" onclick="unstarBookmark(${i})" title="\u30b9\u30bf\u30fc\u5916\u308b">\u2605</button>
@@ -739,7 +823,7 @@ function renderCard(s, i, compact) {
       }
       ${isUrlEditing
         ? `<input class="edit-input" style="margin-top:4px;font-size:12px;width:100%;" value="${escapeHtml(s.url)}" onchange="updateUrl(${i}, this.value)" onblur="stopUrlEdit(${i})" id="url_edit_${i}">`
-        : `<div class="url"><a href="${escapeHtml(s.url)}" target="_blank">${escapeHtml(s.url)}</a></div>`
+        : `<div class="url"><a href="${safeHttpUrl(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.url)}</a></div>`
       }
     </div>
     <div class="actions">
@@ -807,13 +891,13 @@ function render() {
     const catItems = groups[cat] || [];
     html += `<div class="category-group" draggable="true" data-cat="${escapeHtml(cat)}"
       ondragstart="onCatDragStart(event)" ondragover="onCatDragOver(event)" ondragleave="onCatDragLeave(event)" ondrop="onCatDrop(event)" ondragend="onCatDragEnd(event)">
-      <div class="category-title ${collapsedClass}" onclick="toggleCategory('${catId}', '${escapeHtml(cat).replace(/'/g, "\\'")}')">
+      <div class="category-title ${collapsedClass}" onclick="toggleCategory('${catId}', '${jsSq(cat)}')">
         <span class="arrow">\u25BC</span>
         <span class="drag-handle-cat" onclick="event.stopPropagation()">\u2807</span>
         <span class="cat-icon">\u{1F4C2}</span> ${escapeHtml(cat)}
         <span style="margin-left:auto;display:flex;align-items:center;gap:2px;">
-          <button class="cat-move-btn" onclick="event.stopPropagation();moveCategory('${escapeHtml(cat).replace(/'/g, "\\'")}', -1)" title="\u4e0a\u306b\u79fb\u52d5">\u25B2</button>
-          <button class="cat-move-btn" onclick="event.stopPropagation();moveCategory('${escapeHtml(cat).replace(/'/g, "\\'")}', 1)" title="\u4e0b\u306b\u79fb\u52d5">\u25BC</button>
+          <button class="cat-move-btn" onclick="event.stopPropagation();moveCategory('${jsSq(cat)}', -1)" title="\u4e0a\u306b\u79fb\u52d5">\u25B2</button>
+          <button class="cat-move-btn" onclick="event.stopPropagation();moveCategory('${jsSq(cat)}', 1)" title="\u4e0b\u306b\u79fb\u52d5">\u25BC</button>
           <span style="font-size:12px;color:#999;margin-left:4px;">${catItems.length}</span>
         </span>
       </div>
@@ -882,7 +966,7 @@ function renderCatEditorList() {
     return `<div class="cat-edit-item">
       <input type="text" value="${escapeHtml(c)}" data-old="${escapeHtml(c)}" onchange="renameCategory(this)">
       <span class="cat-count">${n}\u4ef6</span>
-      <button class="btn btn-danger" onclick="deleteCategory('${escapeHtml(c).replace(/'/g, "\\'")}')" title="\u524a\u9664"><span class="trash-icon">\u{1F5D1}\uFE0F</span></button>
+      <button class="btn btn-danger" onclick="deleteCategory('${jsSq(c)}')" title="\u524a\u9664"><span class="trash-icon">\u{1F5D1}\uFE0F</span></button>
     </div>`;
   }).join('');
 }
@@ -1351,6 +1435,13 @@ window.addEventListener('beforeunload', e => {
   if (dirty) { e.preventDefault(); e.returnValue = ''; }
 });
 
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (document.getElementById('iconPickerModal').classList.contains('show')) closeIconPicker();
+    else if (document.getElementById('iconStoreModal').classList.contains('show')) closeIconManager();
+  }
+});
+
 async function waitForServer(maxMs = 60000) {
   const deadline = Date.now() + maxMs;
   await new Promise(r => setTimeout(r, 2000));
@@ -1461,14 +1552,23 @@ def serve_favicon_ico():
 def api_bookmarks():
     if request.method == "POST":
         data = request.json
-        save_data({
-            "bookmarks": data.get("bookmarks", []),
-            "cat_order": data.get("cat_order", []),
-            "starred_order": data.get("starred_order", []),
-            "categories": data.get("categories", []),
-            "favicon_mode": int(data.get("favicon_mode", 0)),
-            "item_order": data.get("item_order", {}),
-        })
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "invalid request"}), 400
+        try:
+            favicon_mode = int(data.get("favicon_mode", 0))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "invalid favicon_mode"}), 400
+        if not isinstance(data.get("bookmarks", []), list):
+            return jsonify({"ok": False, "error": "invalid bookmarks"}), 400
+        with _DATA_LOCK:
+            save_data({
+                "bookmarks": data.get("bookmarks", []),
+                "cat_order": data.get("cat_order", []),
+                "starred_order": data.get("starred_order", []),
+                "categories": data.get("categories", []),
+                "favicon_mode": favicon_mode,
+                "item_order": data.get("item_order", {}),
+            })
         return jsonify({"ok": True})
 
     return jsonify(load_data())
@@ -1477,9 +1577,16 @@ def api_bookmarks():
 @app.route("/api/favicon-setting", methods=["POST"])
 def api_favicon_setting():
     data = request.json
-    current = load_data()
-    current["favicon_mode"] = int(data.get("favicon_mode", 0))
-    save_data(current)
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "invalid request"}), 400
+    try:
+        favicon_mode = int(data.get("favicon_mode", 0))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "invalid favicon_mode"}), 400
+    with _DATA_LOCK:
+        current = load_data()
+        current["favicon_mode"] = favicon_mode
+        save_data(current)
     return jsonify({"ok": True})
 
 
@@ -1493,7 +1600,7 @@ def api_favicon():
         with open(path, "rb") as f:
             data = f.read()
         return Response(data, content_type="image/png")
-    if fetch_and_cache_favicon(url):
+    if fetch_and_cache_favicon(url) and os.path.exists(path):
         with open(path, "rb") as f:
             data = f.read()
         return Response(data, content_type="image/png")
@@ -1522,8 +1629,14 @@ def api_favicon_upload():
 @app.route("/api/favicon-fetch-all", methods=["POST"])
 def api_favicon_fetch_all():
     data = request.json
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "invalid request"}), 400
     urls = data.get("urls", [])
+    if not isinstance(urls, list):
+        return jsonify({"ok": False, "error": "invalid urls"}), 400
     for url in urls:
+        if not isinstance(url, str) or not url:
+            continue
         path = get_favicon_path(url)
         if not os.path.exists(path):
             fetch_and_cache_favicon(url)
@@ -1532,8 +1645,9 @@ def api_favicon_fetch_all():
 
 @app.route("/api/icons")
 def api_icons():
+    import urllib.parse
     names = list_icon_files()
-    return jsonify({"icons": [{"name": n, "url": f"/icon/{n}"} for n in names]})
+    return jsonify({"icons": [{"name": n, "url": f"/icon/{urllib.parse.quote(n)}"} for n in names]})
 
 
 @app.route("/icon/<path:filename>")
@@ -1563,20 +1677,31 @@ def api_icon_upload():
         return jsonify({"ok": False, "error": "empty file"}), 400
     if len(data) > ICON_MAX_BYTES:
         return jsonify({"ok": False, "error": "file too large (max 5MB)"}), 400
-    filename = unique_icon_filename(sanitize_icon_filename(file.filename))
+    import urllib.parse
+    # 保存形式に合わせて拡張子を正規化してから一意化（.gif/.webp等→.png）
+    sanitized = sanitize_icon_filename(file.filename)
+    stem, ext = os.path.splitext(sanitized)
+    if ext.lower() not in (".jpg", ".jpeg", ".svg", ".ico"):
+        sanitized = stem + ".png"
+    filename = unique_icon_filename(sanitized)
     try:
-        save_icon_file(data, filename)
-        return jsonify({"ok": True, "name": filename, "url": f"/icon/{filename}"})
+        actual = save_icon_file(data, filename)
+        return jsonify({"ok": True, "name": actual, "url": f"/icon/{urllib.parse.quote(actual)}"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/api/icon-delete", methods=["POST"])
 def api_icon_delete():
-    data = request.json or {}
-    name = os.path.basename(data.get("name", ""))
-    if not name:
+    data = request.json
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "invalid request"}), 400
+    raw_name = data.get("name", "")
+    if not isinstance(raw_name, str) or not raw_name:
         return jsonify({"ok": False, "error": "no name"}), 400
+    name = os.path.basename(raw_name)
+    if name != raw_name or os.path.splitext(name)[1].lower() not in ICON_ALLOWED_EXTS:
+        return jsonify({"ok": False, "error": "invalid name"}), 400
     path = os.path.join(ICON_DIR, name)
     # ディレクトリ外参照を拒否
     if os.path.dirname(os.path.abspath(path)) != os.path.abspath(ICON_DIR):
