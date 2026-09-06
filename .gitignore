@@ -11,6 +11,7 @@ export*.json
 feeds_*.opml.xml
 *.opml
 *.opml.xml
+icon/
 
 # ===== アップデート時のバックアップ =====
 *.bak
