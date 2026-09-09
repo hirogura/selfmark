@@ -52,7 +52,7 @@ sudo curl -fsSL \
 sudo systemctl restart selfmark
 ```
 
-## Google Chrome 拡張機能（selfmark-extension-v15.zip）
+## Google Chrome 拡張機能（selfmark-extension-v16.zip）
 
 ブラウザからブックマークを追加・検索・閲覧できる Chrome 拡張機能です（Manifest V3）。
 
@@ -69,9 +69,9 @@ sudo systemctl restart selfmark
 1. 拡張機能 ZIP をダウンロードします。
 
    ```bash
-   curl -fsSL -o selfmark-extension-v15.zip \
-     https://raw.githubusercontent.com/hirogura/selfmark/main/selfmark-extension-v15.zip
-   unzip -d selfmark-extension selfmark-extension-v15.zip
+   curl -fsSL -o selfmark-extension-v16.zip \
+     https://raw.githubusercontent.com/hirogura/selfmark/main/selfmark-extension-v16.zip
+   unzip -d selfmark-extension selfmark-extension-v16.zip
    ```
 
 2. Chrome で `chrome://extensions` を開きます。

@@ -18,8 +18,8 @@ GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.p
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/hirogura/selfmark/main"
 SUB_INSTALLER_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/install-selfmark-sub1.sh"
 SUB_PORT = "3357"
-EXTENSION_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/selfmark-extension-v15.zip"
-EXTENSION_FILENAME = "selfmark-extension-v15.zip"
+EXTENSION_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/selfmark-extension-v16.zip"
+EXTENSION_FILENAME = "selfmark-extension-v16.zip"
 app = Flask(__name__)
 
 
@@ -337,7 +337,7 @@ HTML = r"""<!DOCTYPE html>
   <h1>selfmark</h1>
   <div class="header-admin">
     <button class="btn-admin" id="btnIconStore" title="ブックマーク用アイコンをアップロード・管理" onclick="openIconManager()">アイコン置き場</button>
-    <button class="btn-admin" id="btnExtension" title="Chrome拡張機能（selfmark-extension-v15.zip）をダウンロード" onclick="downloadExtension()">Google Chrome 拡張機能</button>
+    <button class="btn-admin" id="btnExtension" title="Chrome拡張機能（selfmark-extension-v16.zip）をダウンロード" onclick="downloadExtension()">Google Chrome 拡張機能</button>
     <button class="btn-admin" id="btnInstallSub" title="閲覧専用ビュー（selfmark-sub）をポート3357にインストール" onclick="installSub()">selfmark-subインストール</button>
     <button class="btn-admin" id="btnAdminUpdate" title="GitHubから最新版を取得してアップデート" onclick="adminUpdate()">アップデート</button>
     <button class="btn-admin" id="btnAdminRestart" title="selfmarkサービスを再起動" onclick="adminRestart()">再起動</button>
@@ -1477,11 +1477,11 @@ async function installSub() {
 function downloadExtension() {
   const a = document.createElement('a');
   a.href = '/api/extension/download';
-  a.download = 'selfmark-extension-v15.zip';
+  a.download = 'selfmark-extension-v16.zip';
   document.body.appendChild(a);
   a.click();
   a.remove();
-  showToast('Chrome 拡張機能（selfmark-extension-v15.zip）をダウンロードしました');
+  showToast('Chrome 拡張機能（selfmark-extension-v16.zip）をダウンロードしました');
 }
 
 async function adminUpdate() {
