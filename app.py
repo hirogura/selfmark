@@ -12,14 +12,14 @@ from flask import Flask, Response, request, jsonify
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bookmarks.json")
 APP_PATH = os.path.abspath(__file__)
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/hirogura/selfmark/main"
 SUB_INSTALLER_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/install-selfmark-sub1.sh"
 SUB_PORT = "3357"
-EXTENSION_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/selfmark-extension-v16.zip"
-EXTENSION_FILENAME = "selfmark-extension-v16.zip"
+EXTENSION_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/selfmark-extension-v17.zip"
+EXTENSION_FILENAME = "selfmark-extension-v17.zip"
 app = Flask(__name__)
 
 
@@ -337,7 +337,7 @@ HTML = r"""<!DOCTYPE html>
   <h1>selfmark</h1>
   <div class="header-admin">
     <button class="btn-admin" id="btnIconStore" title="ブックマーク用アイコンをアップロード・管理" onclick="openIconManager()">アイコン置き場</button>
-    <button class="btn-admin" id="btnExtension" title="Chrome拡張機能（selfmark-extension-v16.zip）をダウンロード" onclick="downloadExtension()">Google Chrome 拡張機能</button>
+    <button class="btn-admin" id="btnExtension" title="Chrome拡張機能（selfmark-extension-v17.zip）をダウンロード" onclick="downloadExtension()">Google Chrome 拡張機能</button>
     <button class="btn-admin" id="btnInstallSub" title="閲覧専用ビュー（selfmark-sub）をポート3357にインストール" onclick="installSub()">selfmark-subインストール</button>
     <button class="btn-admin" id="btnAdminUpdate" title="GitHubから最新版を取得してアップデート" onclick="adminUpdate()">アップデート</button>
     <button class="btn-admin" id="btnAdminRestart" title="selfmarkサービスを再起動" onclick="adminRestart()">再起動</button>
@@ -764,6 +764,19 @@ function applyItemOrderToGroup(items, cat) {
   return found.concat(rest);
 }
 
+function advanceFavicon(img) {
+  const sources = JSON.parse(decodeURIComponent(img.dataset.fallbackSources));
+  if (sources.length) {
+    const next = sources.shift();
+    img.dataset.fallbackSources = encodeURIComponent(JSON.stringify(sources));
+    img.src = next;
+  } else {
+    img.onerror = null;
+    img.style.display = 'none';
+    img.nextElementSibling.style.display = 'block';
+  }
+}
+
 function renderCard(s, i, compact) {
   const cat = getCat(i);
   const isEditing = s._editing;
@@ -783,14 +796,16 @@ function renderCard(s, i, compact) {
   let faviconHtml = '<span class="icon-click" style="font-size:20px;opacity:0.6;" onclick="openIconPicker(' + i + ')" title="アイコンを設定">\u{1F4CC}</span>';
   if (faviconMode >= 1) {
     const cachedSrc = '/api/favicon?url=' + encodeURIComponent(s.url);
-    const liveIcoSrc = (() => { try { return new URL(s.url).origin + '/favicon.ico'; } catch(e) { return ''; }})();
-    const livePngSrc = (() => { try { return new URL(s.url).origin + '/favicon.png'; } catch(e) { return ''; }})();
-    const liveSvgSrc = (() => { try { return new URL(s.url).origin + '/favicon.svg'; } catch(e) { return ''; }})();
-    if (faviconMode === 2 && liveIcoSrc) {
-      faviconHtml = '<img loading="lazy" src="' + liveIcoSrc + '" width="24" height="24" style="border-radius:4px;cursor:pointer;" onclick="openIconPicker(' + i + ')" title="アイコンを設定" onerror="this.src=\'' + livePngSrc + '\';this.onerror=function(){this.src=\'' + liveSvgSrc + '\';this.onerror=function(){this.src=\'' + cachedSrc + '\';this.onerror=function(){this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'}}}"><span style="display:none;cursor:pointer;font-size:20px;opacity:0.6;" onclick="openIconPicker(' + i + ')" title="アイコンを設定">\u{1F4CC}</span>';
-    } else {
-      faviconHtml = '<img loading="lazy" src="' + cachedSrc + '" width="24" height="24" style="border-radius:4px;cursor:pointer;" onclick="openIconPicker(' + i + ')" title="アイコンを設定" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'"><span style="display:none;cursor:pointer;font-size:20px;opacity:0.6;" onclick="openIconPicker(' + i + ')" title="アイコンを設定">\u{1F4CC}</span>';
+    const fallbackSources = [];
+    if (faviconMode === 2) {
+      try {
+        const url = new URL(s.url);
+        if (['http:', 'https:'].includes(url.protocol)) {
+          ['ico', 'png', 'svg'].forEach(ext => fallbackSources.push(url.origin + '/favicon.' + ext));
+        }
+      } catch(e) {}
     }
+    faviconHtml = '<img loading="lazy" src="' + cachedSrc + '" data-fallback-sources="' + encodeURIComponent(JSON.stringify(fallbackSources)) + '" width="24" height="24" style="border-radius:4px;cursor:pointer;" onclick="openIconPicker(' + i + ')" title="アイコンを設定" onerror="advanceFavicon(this)"><span style="display:none;cursor:pointer;font-size:20px;opacity:0.6;" onclick="openIconPicker(' + i + ')" title="アイコンを設定">\u{1F4CC}</span>';
   }
   const iconHtml = customIconHtml || faviconHtml;
 
@@ -1477,11 +1492,11 @@ async function installSub() {
 function downloadExtension() {
   const a = document.createElement('a');
   a.href = '/api/extension/download';
-  a.download = 'selfmark-extension-v16.zip';
+  a.download = 'selfmark-extension-v17.zip';
   document.body.appendChild(a);
   a.click();
   a.remove();
-  showToast('Chrome 拡張機能（selfmark-extension-v16.zip）をダウンロードしました');
+  showToast('Chrome 拡張機能（selfmark-extension-v17.zip）をダウンロードしました');
 }
 
 async function adminUpdate() {
@@ -1504,6 +1519,17 @@ refresh();
 </script>
 </body>
 </html>"""
+
+
+@app.after_request
+def disable_response_cache(response):
+    if request.path in {
+        "/api/bookmarks", "/api/favicon", "/api/icons", "/api/extension/download",
+        "/favicon.png", "/favicon.ico", "/selfmark.png",
+        "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png",
+    } or request.path.startswith("/icon/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/")
@@ -1731,17 +1757,17 @@ def api_version():
 @app.route("/api/extension/download")
 def api_extension_download():
     data = b""
+    local = os.path.join(os.path.dirname(APP_PATH), EXTENSION_FILENAME)
     try:
-        req = urllib.request.Request(EXTENSION_URL, headers={"User-Agent": "selfmark-updater"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = resp.read()
-    except Exception:
-        pass
-    if not data:
-        local = os.path.join(os.path.dirname(APP_PATH), EXTENSION_FILENAME)
-        if os.path.exists(local):
+        try:
             with open(local, "rb") as f:
                 data = f.read()
+        except FileNotFoundError:
+            req = urllib.request.Request(EXTENSION_URL, headers={"User-Agent": "selfmark-updater"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = resp.read()
+    except Exception:
+        pass
     if not data:
         return jsonify({"error": "拡張機能の取得に失敗しました"}), 500
     return Response(data, content_type="application/zip",

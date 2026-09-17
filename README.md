@@ -52,7 +52,7 @@ sudo curl -fsSL \
 sudo systemctl restart selfmark
 ```
 
-## Google Chrome 拡張機能（selfmark-extension-v16.zip）
+## Google Chrome 拡張機能（selfmark-extension-v17.zip）
 
 ブラウザからブックマークを追加・検索・閲覧できる Chrome 拡張機能です（Manifest V3）。
 
@@ -61,6 +61,7 @@ sudo systemctl restart selfmark
 - 現在開いているタブの URL を 1 クリックで selfmark に追加
 - ブックマークの検索・閲覧（カテゴリー / お気に入りで分類表示）
 - ブラウザ上から編集・削除・お気に入り登録が可能
+- v17 の設定画面の「アイコンを再取得」で拡張機能内のアイコンを再取得（Chrome 全体のキャッシュやサーバ保存画像は削除しません）
 
 <img width="443" height="512" alt="Image" src="https://github.com/user-attachments/assets/84f03329-058d-48e1-af34-6808a86024ab" />
 
@@ -69,9 +70,9 @@ sudo systemctl restart selfmark
 1. 拡張機能 ZIP をダウンロードします。
 
    ```bash
-   curl -fsSL -o selfmark-extension-v16.zip \
-     https://raw.githubusercontent.com/hirogura/selfmark/main/selfmark-extension-v16.zip
-   unzip -d selfmark-extension selfmark-extension-v16.zip
+   curl -fsSL -o selfmark-extension-v17.zip \
+     https://raw.githubusercontent.com/hirogura/selfmark/main/selfmark-extension-v17.zip
+   unzip -d selfmark-extension selfmark-extension-v17.zip
    ```
 
 2. Chrome で `chrome://extensions` を開きます。
@@ -80,6 +81,12 @@ sudo systemctl restart selfmark
 5. ツールバーの selfmark アイコンをクリック → 設定（歯車）を開き、selfmark の Web UI の URL を入力して「保存」します。
 
 これでブラウザから直接ブックマークを操作できます。
+
+**既存の拡張機能を更新する場合**
+
+1. Web UI の「Google Chrome 拡張機能」または上記 URL から `selfmark-extension-v17.zip` を取得します。Web UI はサーバの `app.py` と同じ場所の同名 ZIP を優先し、ない場合だけ GitHub から取得します。
+2. Chrome に登録済みの拡張機能フォルダへ上書き解凍します（例: `unzip -o selfmark-extension-v17.zip -d selfmark-extension`）。
+3. `chrome://extensions` で selfmark の再読み込みボタンを押し、拡張機能の画面を開き直します。必要に応じて設定画面の「アイコンを再取得」を実行してください。
 
 ## selfmark-sub（閲覧専用ビュー）のインストール方法
 
