@@ -12,7 +12,7 @@ from flask import Flask, Response, request, jsonify
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bookmarks.json")
 APP_PATH = os.path.abspath(__file__)
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/hirogura/selfmark/main"
@@ -480,6 +480,7 @@ HTML = r"""<!DOCTYPE html>
       <button class="btn btn-primary" onclick="saveSyncSettings()">保存</button>
       <button class="btn btn-success" id="btnSyncNow" onclick="runSyncNow()">⚡ 今すぐ同期</button>
       <button class="btn btn-secondary" onclick="closeSyncSettings()">閉じる</button>
+      <button class="btn btn-secondary" id="btnSyncStop" onclick="stopSync()">同期を停止</button>
     </div>
   </div>
 </div>
@@ -1668,6 +1669,30 @@ async function runSyncNow() {
   b.disabled = false; b.textContent = '⚡ 今すぐ同期';
 }
 
+async function stopSync() {
+  if (!confirm('同期を停止しますか？\n相手の指定が外れ、自動同期も行われなくなります。')) return;
+  const b = document.getElementById('btnSyncStop');
+  b.disabled = true; b.textContent = '停止中…';
+  try {
+    const res = await fetch('/api/sync/stop', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({}),
+    });
+    const d = await res.json();
+    if (!res.ok || !d.ok) { showToast(d.error || '停止に失敗しました'); }
+    else { showToast(d.peer_message || '同期を停止しました'); }
+    const cfgRes = await fetch('/api/sync/config');
+    const cfg = await cfgRes.json();
+    const sel = document.getElementById('syncPeer');
+    if (sel) sel.value = '';
+    renderSyncStatus(cfg);
+  } catch(e) {
+    showToast('停止に失敗しました');
+  }
+  b.disabled = false; b.textContent = '同期を停止';
+}
+
 fetch('/api/version').then(res => res.json()).then(v => { document.getElementById('appVersion').textContent = 'v.' + v.version; }).catch(() => {});
 
 refresh();
@@ -2515,6 +2540,50 @@ def api_sync_run():
             _SYNC_RUN_LOCK.release()
         except RuntimeError:
             pass
+
+
+@app.route("/api/sync/unlink", methods=["POST"])
+def api_sync_unlink():
+    """相手PCからの停止連動用。相手が同期を停止したら自分の相手指定も外す。"""
+    data = request.json
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "invalid request"}), 400
+    peer_url = (data.get("peer_url", "") or "").strip().rstrip("/")
+    cfg = load_sync_config()
+    unlinked = False
+    if peer_url and (cfg.get("peer") or "").rstrip("/") == peer_url:
+        cfg["peer"] = ""
+        cfg["peer_name"] = ""
+        cfg["last_result"] = "相手側で同期が停止されたため、相手指定を解除しました"
+        save_sync_config(cfg)
+        unlinked = True
+    return jsonify({"ok": True, "unlinked": unlinked})
+
+
+@app.route("/api/sync/stop", methods=["POST"])
+def api_sync_stop():
+    data = request.json
+    if data is not None and not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "invalid request"}), 400
+    cfg = load_sync_config()
+    old_peer = (cfg.get("peer") or "").strip()
+    cfg["peer"] = ""
+    cfg["peer_name"] = ""
+    cfg["last_result"] = f"同期を停止しました（{datetime.datetime.now().isoformat(timespec='seconds')}）"
+    save_sync_config(cfg)
+    # 相手側にも通知し、相手の相手指定を外す（ベストエフォート）
+    peer_notified = False
+    peer_message = ""
+    if old_peer and (not data or data.get("notify_peer", True)):
+        try:
+            r = _http_post_json(old_peer.rstrip("/") + "/api/sync/unlink",
+                                {"peer_url": get_self_base_url()}, timeout=10)
+            peer_notified = bool(isinstance(r, dict) and r.get("unlinked"))
+            peer_message = "相手側の同期設定も解除しました" if peer_notified else "相手側への通知は届きましたが、相手の相手指定は既に外れていました"
+        except Exception as e:
+            peer_message = f"相手側への通知に失敗しました（相手のselfmarkを最新版に更新するか、相手側でも停止してください）: {e}"
+    return jsonify({"ok": True, "peer_notified": peer_notified,
+                    "peer_message": peer_message})
 
 
 start_sync_scheduler()
