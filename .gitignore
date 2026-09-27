@@ -5,6 +5,7 @@ __pycache__/
 
 # ===== selfmark のデータ（個人情報を含むため絶対に公開しない） =====
 bookmarks.json
+sync_config.json
 favicon_cache/
 selfmark-export-*.json
 export*.json

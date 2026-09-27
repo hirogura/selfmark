@@ -12,7 +12,7 @@ from flask import Flask, Response, request, jsonify
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bookmarks.json")
 APP_PATH = os.path.abspath(__file__)
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/hirogura/selfmark/main"
@@ -20,12 +20,26 @@ SUB_INSTALLER_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/in
 SUB_PORT = "3357"
 EXTENSION_URL = "https://raw.githubusercontent.com/hirogura/selfmark/main/selfmark-extension-v17.zip"
 EXTENSION_FILENAME = "selfmark-extension-v17.zip"
+SYNC_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sync_config.json")
+SYNC_ROLE_SOURCE = "source"
+SYNC_ROLE_DEST = "destination"
+DEFAULT_SYNC_CONFIG = {
+    "role": SYNC_ROLE_SOURCE,
+    "peer": "",
+    "peer_name": "",
+    "sync_time": "03:00",
+    "last_sync": "",
+    "last_result": "",
+}
 app = Flask(__name__)
 
 
 DEFAULT_DATA = {"bookmarks": [], "cat_order": [], "starred_order": [], "categories": [], "favicon_mode": 0, "item_order": {}}
 
 _DATA_LOCK = threading.RLock()
+_SYNC_LOCK = threading.RLock()
+_SYNC_RUN_LOCK = threading.Lock()
+_SYNC_THREAD_STARTED = False
 
 
 def load_data():
@@ -55,6 +69,9 @@ def save_data(data):
 
 
 import hashlib
+import base64
+import datetime
+import re
 import urllib.request
 import ssl
 from PIL import Image
@@ -326,6 +343,14 @@ HTML = r"""<!DOCTYPE html>
   .icon-cell .icon-del:hover { color: #ff6b6b; }
   .card .icon img.custom-icon { width: 48px; height: 48px; object-fit: contain; border-radius: 10px; cursor: pointer; background: white; }
   .card .icon .icon-click { cursor: pointer; }
+  .sync-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .sync-row label { font-size: 13px; font-weight: 600; color: #555; min-width: 90px; }
+  .sync-role-toggle { display: flex; gap: 0; border: 1px solid #e8e8f0; border-radius: 8px; overflow: hidden; }
+  .sync-role-toggle button { border: none; background: #f4f4f8; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; color: #888; }
+  .sync-role-toggle button.active { background: #0f0f23; color: white; }
+  .sync-status { font-size: 12px; color: #666; background: #f8f8fc; border-radius: 8px; padding: 10px 12px; margin-top: 4px; }
+  .sync-time-input { border: 1px solid #e8e8f0; border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+  .sync-time-input:focus { outline: none; border-color: #6c5ce7; }
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #d0d0dd; border-radius: 3px; }
@@ -339,6 +364,7 @@ HTML = r"""<!DOCTYPE html>
     <button class="btn-admin" id="btnIconStore" title="ブックマーク用アイコンをアップロード・管理" onclick="openIconManager()">アイコン置き場</button>
     <button class="btn-admin" id="btnExtension" title="Chrome拡張機能（selfmark-extension-v17.zip）をダウンロード" onclick="downloadExtension()">Google Chrome 拡張機能</button>
     <button class="btn-admin" id="btnInstallSub" title="閲覧専用ビュー（selfmark-sub）をポート3357にインストール" onclick="installSub()">selfmark-subインストール</button>
+    <button class="btn-admin" id="btnSync" title="別PCのselfmarkとブックマークを同期" onclick="openSyncSettings()">同期</button>
     <button class="btn-admin" id="btnAdminUpdate" title="GitHubから最新版を取得してアップデート" onclick="adminUpdate()">アップデート</button>
     <button class="btn-admin" id="btnAdminRestart" title="selfmarkサービスを再起動" onclick="adminRestart()">再起動</button>
     <span class="version-label" id="appVersion"></span>
@@ -423,6 +449,38 @@ HTML = r"""<!DOCTYPE html>
       <button class="btn btn-secondary" onclick="closeIconPicker()">キャンセル</button>
     </div>
     <div class="modal-desc" style="margin-top:8px;margin-bottom:0;">設定後は「💾 保存」を押してください（Escでも閉じられます）。</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="syncModal">
+  <div class="modal">
+    <h3>🔄 selfmark 同期</h3>
+    <div class="modal-desc">別PCの selfmark と1日1回・片方向で同期します（予備機用途・同期先は1箇所のみ）。相手PCも最新版の selfmark に更新してください。</div>
+    <div class="sync-row">
+      <label>役割</label>
+      <div class="sync-role-toggle">
+        <button id="syncRoleSource" onclick="setSyncRole('source')">同期元（送る側）</button>
+        <button id="syncRoleDest" onclick="setSyncRole('destination')">同期先（受ける側）</button>
+      </div>
+    </div>
+    <div class="modal-desc" id="syncRoleDesc" style="margin-top:-6px;"></div>
+    <div class="sync-row">
+      <label>同期相手</label>
+      <select class="cat-select" id="syncPeer" style="max-width:100%;flex:1;min-width:220px;font-size:13px;padding:8px 10px;">
+        <option value="">-- 選択してください --</option>
+      </select>
+    </div>
+    <div class="sync-row">
+      <label>同期時刻</label>
+      <input type="time" class="sync-time-input" id="syncTime" value="03:00">
+      <span style="font-size:12px;color:#888;">1日1回この時刻以降に自動同期</span>
+    </div>
+    <div class="sync-status" id="syncStatus">読み込み中…</div>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="saveSyncSettings()">保存</button>
+      <button class="btn btn-success" id="btnSyncNow" onclick="runSyncNow()">⚡ 今すぐ同期</button>
+      <button class="btn btn-secondary" onclick="closeSyncSettings()">閉じる</button>
+    </div>
   </div>
 </div>
 
@@ -1454,6 +1512,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (document.getElementById('iconPickerModal').classList.contains('show')) closeIconPicker();
     else if (document.getElementById('iconStoreModal').classList.contains('show')) closeIconManager();
+    else if (document.getElementById('syncModal').classList.contains('show')) closeSyncSettings();
   }
 });
 
@@ -1513,6 +1572,102 @@ async function adminUpdate() {
   location.reload();
 }
 
+let syncRole = 'source';
+let syncPeers = [];
+
+function setSyncRole(role) {
+  syncRole = (role === 'destination') ? 'destination' : 'source';
+  document.getElementById('syncRoleSource').classList.toggle('active', syncRole === 'source');
+  document.getElementById('syncRoleDest').classList.toggle('active', syncRole === 'destination');
+  document.getElementById('syncRoleDesc').textContent = syncRole === 'source'
+    ? 'このPCが「同期元」: 相手（同期先）へデータを送ります。保存すると相手は自動で「同期先」になります。'
+    : 'このPCが「同期先」: 相手（同期元）からデータを受け取ります。保存すると相手は自動で「同期元」になります。';
+}
+
+function renderSyncStatus(cfg) {
+  const el = document.getElementById('syncStatus');
+  const roleLabel = (cfg.role === 'destination') ? '同期先' : '同期元';
+  const peerLabel = cfg.peer_name ? `${cfg.peer_name}（${cfg.peer}）` : (cfg.peer || '未設定');
+  const last = cfg.last_sync ? `最終同期: ${cfg.last_sync}` : '最終同期: まだありません';
+  const result = cfg.last_result ? `結果: ${cfg.last_result}` : '';
+  el.textContent = `役割: ${roleLabel} ／ 相手: ${peerLabel} ／ 時刻: ${cfg.sync_time || '--:--'} ／ ${last}${result ? ' ／ ' + result : ''}`;
+}
+
+async function openSyncSettings() {
+  document.getElementById('syncModal').classList.add('show');
+  document.getElementById('syncStatus').textContent = '読み込み中…';
+  setSyncRole('source');
+  try {
+    const [cfgRes, peerRes] = await Promise.all([fetch('/api/sync/config'), fetch('/api/sync/peers')]);
+    const cfg = await cfgRes.json();
+    const peers = await peerRes.json();
+    syncPeers = peers.peers || [];
+    setSyncRole(cfg.role === 'destination' ? 'destination' : 'source');
+    const sel = document.getElementById('syncPeer');
+    const cur = cfg.peer || '';
+    // 稼働中（online）を先頭に表示
+    sel.innerHTML = '<option value="">-- 選択してください --</option>' + syncPeers.map(p => {
+      const state = p.online ? '' : '（オフライン）';
+      const label = `${p.name} [${p.dns}]${state}`;
+      const selected = (p.url === cur) ? ' selected' : '';
+      return `<option value="${escapeHtml(p.url)}" data-name="${escapeHtml(p.name)}"${selected}>${escapeHtml(label)}</option>`;
+    }).join('');
+    if (cur && !syncPeers.some(p => p.url === cur)) {
+      sel.innerHTML += `<option value="${escapeHtml(cur)}" selected>${escapeHtml(cfg.peer_name ? cfg.peer_name + ' [' + cur + ']' : cur)}（一覧外）</option>`;
+    }
+    document.getElementById('syncTime').value = cfg.sync_time || '03:00';
+    renderSyncStatus(cfg);
+  } catch(e) {
+    document.getElementById('syncStatus').textContent = '設定の読み込みに失敗しました';
+  }
+}
+
+function closeSyncSettings() {
+  document.getElementById('syncModal').classList.remove('show');
+}
+
+async function saveSyncSettings() {
+  const sel = document.getElementById('syncPeer');
+  const peer = sel.value;
+  const peerName = sel.selectedOptions.length > 0 ? (sel.selectedOptions[0].dataset.name || '') : '';
+  const syncTime = document.getElementById('syncTime').value;
+  if (!peer) { showToast('同期相手を選択してください'); return; }
+  if (!syncTime) { showToast('同期時刻を指定してください'); return; }
+  try {
+    const res = await fetch('/api/sync/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({role: syncRole, peer, peer_name: peerName, sync_time: syncTime}),
+    });
+    const d = await res.json();
+    if (!res.ok || !d.ok) { showToast(d.error || '保存に失敗しました'); return; }
+    showToast(d.peer_message || '保存しました');
+    const cfgRes = await fetch('/api/sync/config');
+    renderSyncStatus(await cfgRes.json());
+  } catch(e) {
+    showToast('保存に失敗しました');
+  }
+}
+
+async function runSyncNow() {
+  const b = document.getElementById('btnSyncNow');
+  b.disabled = true; b.textContent = '同期中…';
+  try {
+    const res = await fetch('/api/sync/run', { method: 'POST' });
+    const d = await res.json();
+    if (!res.ok || !d.ok) { showToast(d.error || '同期に失敗しました'); }
+    else {
+      showToast(d.message || '同期しました');
+      refresh();
+    }
+    const cfgRes = await fetch('/api/sync/config');
+    renderSyncStatus(await cfgRes.json());
+  } catch(e) {
+    showToast('同期に失敗しました');
+  }
+  b.disabled = false; b.textContent = '⚡ 今すぐ同期';
+}
+
 fetch('/api/version').then(res => res.json()).then(v => { document.getElementById('appVersion').textContent = 'v.' + v.version; }).catch(() => {});
 
 refresh();
@@ -1521,10 +1676,373 @@ refresh();
 </html>"""
 
 
+def load_sync_config():
+    cfg = dict(DEFAULT_SYNC_CONFIG)
+    if os.path.exists(SYNC_CONFIG_FILE):
+        try:
+            with open(SYNC_CONFIG_FILE, "r") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                for key in DEFAULT_SYNC_CONFIG:
+                    if isinstance(data.get(key), str):
+                        cfg[key] = data[key]
+        except (OSError, ValueError, UnicodeDecodeError):
+            pass
+    if cfg.get("role") not in (SYNC_ROLE_SOURCE, SYNC_ROLE_DEST):
+        cfg["role"] = SYNC_ROLE_SOURCE
+    if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", cfg.get("sync_time") or ""):
+        cfg["sync_time"] = DEFAULT_SYNC_CONFIG["sync_time"]
+    return cfg
+
+
+def save_sync_config(cfg):
+    tmp = SYNC_CONFIG_FILE + ".tmp"
+    with _SYNC_LOCK:
+        with open(tmp, "w") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, SYNC_CONFIG_FILE)
+
+
+def _self_port():
+    try:
+        return str(int(os.environ.get("PORT", "3356")))
+    except (TypeError, ValueError):
+        return "3356"
+
+
+def _tailscale_status_json():
+    try:
+        r = subprocess.run(["tailscale", "status", "--json"],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return None
+        data = json.loads(r.stdout or "{}")
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def get_self_base_url():
+    data = _tailscale_status_json()
+    try:
+        if data:
+            dns = (data.get("Self") or {}).get("DNSName", "").rstrip(".")
+            if dns:
+                return f"https://{dns}:{_self_port()}"
+    except Exception:
+        pass
+    return ""
+
+
+def get_self_host_name():
+    data = _tailscale_status_json()
+    try:
+        if data:
+            return (data.get("Self") or {}).get("HostName", "")
+    except Exception:
+        pass
+    return ""
+
+
+def get_sync_peer_list():
+    """tailnet内のマシン一覧を返す（稼働中を先頭に）。"""
+    data = _tailscale_status_json()
+    if not data:
+        return []
+    peers = data.get("Peer") or {}
+    self_dns = ((data.get("Self") or {}).get("DNSName", "") or "").rstrip(".")
+    port = _self_port()
+    result = []
+    for p in peers.values():
+        if not isinstance(p, dict):
+            continue
+        dns = (p.get("DNSName", "") or "").rstrip(".")
+        if not dns or dns == self_dns:
+            continue
+        name = p.get("HostName", "") or dns
+        ips = p.get("TailscaleIPs") or []
+        result.append({
+            "name": name,
+            "dns": dns,
+            "url": f"https://{dns}:{port}",
+            "ip": ips[0] if ips else "",
+            "os": p.get("OS", "") or "",
+            "online": bool(p.get("Online")),
+        })
+    result.sort(key=lambda x: (not x["online"], x["name"].lower()))
+    return result
+
+
+def _http_get_json(url, timeout=30):
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    req = urllib.request.Request(url, headers={"User-Agent": "selfmark-sync"})
+    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _http_post_json(url, payload, timeout=60):
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(url, data=body,
+                                 headers={"User-Agent": "selfmark-sync",
+                                          "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+        text = resp.read().decode("utf-8") or "{}"
+        try:
+            return json.loads(text)
+        except ValueError:
+            return {}
+
+
+def _is_valid_peer_url(url):
+    if not isinstance(url, str) or not url or len(url) > 500:
+        return False
+    try:
+        parts = urllib.request.urlsplit(url)
+        return parts.scheme in ("http", "https") and bool(parts.hostname)
+    except Exception:
+        return False
+
+
+def _read_bundle_file(path, max_bytes):
+    try:
+        size = os.path.getsize(path)
+        if size <= 0 or size > max_bytes:
+            return None
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("ascii")
+    except OSError:
+        return None
+
+
+def build_sync_bundle():
+    data = load_data()
+    bundle_data = {
+        "bookmarks": data.get("bookmarks", []),
+        "cat_order": data.get("cat_order", []),
+        "starred_order": data.get("starred_order", []),
+        "categories": data.get("categories", []),
+        "favicon_mode": data.get("favicon_mode", 0),
+        "item_order": data.get("item_order", {}),
+    }
+    icons = []
+    for name in list_icon_files():
+        content = _read_bundle_file(os.path.join(ICON_DIR, name), ICON_MAX_BYTES)
+        if content is not None:
+            icons.append({"name": name, "content": content})
+    favicons = []
+    try:
+        names = sorted(os.listdir(FAVICON_CACHE_DIR)) if os.path.isdir(FAVICON_CACHE_DIR) else []
+    except OSError:
+        names = []
+    for name in names:
+        if not re.match(r"^[0-9a-f]{16}\.ico$", name):
+            continue
+        content = _read_bundle_file(os.path.join(FAVICON_CACHE_DIR, name), 512 * 1024)
+        if content is not None:
+            favicons.append({"name": name, "content": content})
+    return {
+        "version": 1,
+        "exported_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "data": bundle_data,
+        "icons": icons,
+        "favicons": favicons,
+    }
+
+
+def apply_sync_bundle(bundle):
+    """同期バンドルを検証してローカルに反映する（片方向ミラー）。"""
+    if not isinstance(bundle, dict):
+        raise ValueError("invalid bundle")
+    data = bundle.get("data")
+    if not isinstance(data, dict) or not isinstance(data.get("bookmarks"), list):
+        raise ValueError("invalid bundle data")
+    try:
+        favicon_mode = int(data.get("favicon_mode", 0))
+    except (TypeError, ValueError):
+        raise ValueError("invalid favicon_mode")
+    with _DATA_LOCK:
+        save_data({
+            "bookmarks": data.get("bookmarks", []),
+            "cat_order": data.get("cat_order", []),
+            "starred_order": data.get("starred_order", []),
+            "categories": data.get("categories", []),
+            "favicon_mode": favicon_mode,
+            "item_order": data.get("item_order", {}),
+        })
+    # icon/ をミラー（送信側に無いファイルは削除）
+    wanted_icons = {}
+    for entry in bundle.get("icons", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        raw = entry.get("name", "")
+        name = os.path.basename(raw) if isinstance(raw, str) else ""
+        if name != raw or os.path.splitext(name)[1].lower() not in ICON_ALLOWED_EXTS:
+            continue
+        content = entry.get("content", "")
+        if not isinstance(content, str) or not content:
+            continue
+        try:
+            wanted_icons[name] = base64.b64decode(content, validate=True)
+        except Exception:
+            continue
+        if len(wanted_icons[name]) > ICON_MAX_BYTES:
+            del wanted_icons[name]
+    os.makedirs(ICON_DIR, exist_ok=True)
+    try:
+        for name in list_icon_files():
+            if name not in wanted_icons:
+                try:
+                    os.remove(os.path.join(ICON_DIR, name))
+                except OSError:
+                    pass
+        for name, content in wanted_icons.items():
+            try:
+                with open(os.path.join(ICON_DIR, name), "wb") as f:
+                    f.write(content)
+            except OSError:
+                pass
+    except Exception:
+        pass
+    # favicon_cache をミラー
+    wanted_favicons = {}
+    for entry in bundle.get("favicons", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name", "")
+        if not isinstance(name, str) or not re.match(r"^[0-9a-f]{16}\.ico$", name):
+            continue
+        content = entry.get("content", "")
+        if not isinstance(content, str) or not content:
+            continue
+        try:
+            wanted_favicons[name] = base64.b64decode(content, validate=True)
+        except Exception:
+            continue
+    os.makedirs(FAVICON_CACHE_DIR, exist_ok=True)
+    try:
+        try:
+            existing = os.listdir(FAVICON_CACHE_DIR)
+        except OSError:
+            existing = []
+        for name in existing:
+            if re.match(r"^[0-9a-f]{16}\.ico$", name) and name not in wanted_favicons:
+                try:
+                    os.remove(os.path.join(FAVICON_CACHE_DIR, name))
+                except OSError:
+                    pass
+        for name, content in wanted_favicons.items():
+            try:
+                with open(os.path.join(FAVICON_CACHE_DIR, name), "wb") as f:
+                    f.write(content)
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+
+def _mark_sync_result(ok, message):
+    try:
+        cfg = load_sync_config()
+        now = datetime.datetime.now().isoformat(timespec="seconds")
+        if ok:
+            cfg["last_sync"] = now
+        cfg["last_result"] = message[:300]
+        save_sync_config(cfg)
+    except Exception:
+        pass
+
+
+def sync_push_to_peer(peer_url):
+    """同期元→同期先へ push（同期元側で実行）。"""
+    if not _is_valid_peer_url(peer_url):
+        raise ValueError("同期先が未設定です")
+    bundle = build_sync_bundle()
+    try:
+        _http_post_json(peer_url.rstrip("/") + "/api/sync/import", bundle, timeout=60)
+    except Exception as e:
+        raise RuntimeError(f"送信に失敗しました: {e}")
+    _mark_sync_result(True, f"同期しました（送信・{bundle['exported_at']}）")
+    return bundle.get("exported_at", "")
+
+
+def sync_pull_from_peer(peer_url):
+    """同期先が同期元から pull（同期先側で実行）。"""
+    if not _is_valid_peer_url(peer_url):
+        raise ValueError("同期元が未設定です")
+    try:
+        bundle = _http_get_json(peer_url.rstrip("/") + "/api/sync/export", timeout=60)
+    except Exception as e:
+        raise RuntimeError(f"取得に失敗しました: {e}")
+    apply_sync_bundle(bundle)
+    exported_at = bundle.get("exported_at", "") if isinstance(bundle, dict) else ""
+    _mark_sync_result(True, f"同期しました（受信・{exported_at}）")
+    return exported_at
+
+
+def _sync_scheduler_tick(now=None):
+    cfg = load_sync_config()
+    peer = (cfg.get("peer") or "").strip()
+    if not peer or not _is_valid_peer_url(peer):
+        return False
+    sync_time = cfg.get("sync_time") or DEFAULT_SYNC_CONFIG["sync_time"]
+    if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", sync_time):
+        return False
+    now = now or datetime.datetime.now()
+    if now.strftime("%H:%M") < sync_time:
+        return False
+    last = cfg.get("last_sync") or ""
+    if len(last) >= 10 and last[:10] == now.date().isoformat():
+        return False
+    if not _SYNC_RUN_LOCK.acquire(blocking=False):
+        return False
+    try:
+        role = cfg.get("role")
+        if role == SYNC_ROLE_SOURCE:
+            sync_push_to_peer(peer)
+        elif role == SYNC_ROLE_DEST:
+            sync_pull_from_peer(peer)
+        else:
+            return False
+        return True
+    except Exception as e:
+        _mark_sync_result(False, f"自動同期に失敗しました: {e}")
+        return False
+    finally:
+        try:
+            _SYNC_RUN_LOCK.release()
+        except RuntimeError:
+            pass
+
+
+def _sync_scheduler_loop():
+    while True:
+        try:
+            time.sleep(30)
+            _sync_scheduler_tick()
+        except Exception:
+            continue
+
+
+def start_sync_scheduler():
+    global _SYNC_THREAD_STARTED
+    if _SYNC_THREAD_STARTED:
+        return
+    _SYNC_THREAD_STARTED = True
+    threading.Thread(target=_sync_scheduler_loop, daemon=True).start()
+
+
 @app.after_request
 def disable_response_cache(response):
     if request.path in {
         "/api/bookmarks", "/api/favicon", "/api/icons", "/api/extension/download",
+        "/api/sync/config", "/api/sync/peers", "/api/sync/export",
         "/favicon.png", "/favicon.ico", "/selfmark.png",
         "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png",
     } or request.path.startswith("/icon/"):
@@ -1870,6 +2388,136 @@ def api_admin_install_sub():
         pass
     msg = "selfmark-sub のインストールが完了しました" + (f"（{url}）" if url else "")
     return jsonify({"ok": True, "url": url, "message": msg})
+
+
+@app.route("/api/sync/config", methods=["GET"])
+def api_sync_config():
+    cfg = load_sync_config()
+    cfg["self_url"] = get_self_base_url()
+    cfg["self_name"] = get_self_host_name()
+    return jsonify(cfg)
+
+
+@app.route("/api/sync/config", methods=["POST"])
+def api_sync_config_save():
+    data = request.json
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "invalid request"}), 400
+    role = data.get("role", "")
+    peer = (data.get("peer", "") or "").strip()
+    peer_name = (data.get("peer_name", "") or "").strip()[:100]
+    sync_time = (data.get("sync_time", "") or "").strip()
+    if role not in (SYNC_ROLE_SOURCE, SYNC_ROLE_DEST):
+        return jsonify({"ok": False, "error": "同期元・同期先のいずれかを指定してください"}), 400
+    if peer and not _is_valid_peer_url(peer):
+        return jsonify({"ok": False, "error": "同期先のURLが不正です"}), 400
+    if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", sync_time):
+        return jsonify({"ok": False, "error": "同期時刻は HH:MM 形式で指定してください"}), 400
+    cfg = load_sync_config()
+    cfg["role"] = role
+    cfg["peer"] = peer
+    cfg["peer_name"] = peer_name
+    cfg["sync_time"] = sync_time
+    save_sync_config(cfg)
+    # 相手側の役割を反対にそろえる（相手が旧バージョン等で失敗しても保存自体は成功扱い）
+    peer_notified = False
+    peer_message = ""
+    notify = data.get("notify_peer", True)
+    if peer and notify:
+        opposite = SYNC_ROLE_DEST if role == SYNC_ROLE_SOURCE else SYNC_ROLE_SOURCE
+        self_url = get_self_base_url()
+        payload = {"role": opposite, "peer_url": self_url,
+                   "peer_name": get_self_host_name()}
+        try:
+            _http_post_json(peer.rstrip("/") + "/api/sync/role", payload, timeout=10)
+            peer_notified = True
+            peer_message = "相手側を「%s」に切り替えました" % ("同期先" if opposite == SYNC_ROLE_DEST else "同期元")
+        except Exception as e:
+            peer_message = f"相手側への通知に失敗しました（相手のselfmarkを最新版に更新してください）: {e}"
+    return jsonify({"ok": True, "peer_notified": peer_notified,
+                    "peer_message": peer_message})
+
+
+@app.route("/api/sync/role", methods=["POST"])
+def api_sync_role():
+    """相手PCからの役割連動用。自分の役割を相手の反対に設定する。"""
+    data = request.json
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "invalid request"}), 400
+    role = data.get("role", "")
+    peer_url = (data.get("peer_url", "") or "").strip()
+    peer_name = (data.get("peer_name", "") or "").strip()[:100]
+    if role not in (SYNC_ROLE_SOURCE, SYNC_ROLE_DEST):
+        return jsonify({"ok": False, "error": "invalid role"}), 400
+    if peer_url and not _is_valid_peer_url(peer_url):
+        return jsonify({"ok": False, "error": "invalid peer_url"}), 400
+    cfg = load_sync_config()
+    cfg["role"] = role
+    if peer_url:
+        cfg["peer"] = peer_url
+        cfg["peer_name"] = peer_name
+    save_sync_config(cfg)
+    return jsonify({"ok": True, "role": role})
+
+
+@app.route("/api/sync/peers")
+def api_sync_peers():
+    return jsonify({"peers": get_sync_peer_list(),
+                    "self_url": get_self_base_url(),
+                    "self_name": get_self_host_name()})
+
+
+@app.route("/api/sync/export")
+def api_sync_export():
+    return jsonify(build_sync_bundle())
+
+
+@app.route("/api/sync/import", methods=["POST"])
+def api_sync_import():
+    bundle = request.json
+    try:
+        apply_sync_bundle(bundle)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"反映に失敗しました: {e}"}), 500
+    exported_at = bundle.get("exported_at", "") if isinstance(bundle, dict) else ""
+    _mark_sync_result(True, f"同期しました（受信・{exported_at}）")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/sync/run", methods=["POST"])
+def api_sync_run():
+    cfg = load_sync_config()
+    peer = (cfg.get("peer") or "").strip()
+    if not peer:
+        return jsonify({"ok": False, "error": "同期相手が未設定です。先に相手を選択して保存してください"}), 400
+    if not _SYNC_RUN_LOCK.acquire(blocking=False):
+        return jsonify({"ok": False, "error": "同期を実行中です。しばらく待ってください"}), 409
+    try:
+        if cfg.get("role") == SYNC_ROLE_SOURCE:
+            exported_at = sync_push_to_peer(peer)
+            return jsonify({"ok": True, "direction": "push",
+                            "message": f"同期先へ送信しました（{exported_at}）"})
+        elif cfg.get("role") == SYNC_ROLE_DEST:
+            exported_at = sync_pull_from_peer(peer)
+            return jsonify({"ok": True, "direction": "pull",
+                            "message": f"同期元から取得しました（{exported_at}）"})
+        return jsonify({"ok": False, "error": "役割が不正です"}), 400
+    except (ValueError, RuntimeError) as e:
+        _mark_sync_result(False, f"手動同期に失敗しました: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+    except Exception as e:
+        _mark_sync_result(False, f"手動同期に失敗しました: {e}")
+        return jsonify({"ok": False, "error": f"同期に失敗しました: {e}"}), 500
+    finally:
+        try:
+            _SYNC_RUN_LOCK.release()
+        except RuntimeError:
+            pass
+
+
+start_sync_scheduler()
 
 
 if __name__ == "__main__":
