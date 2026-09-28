@@ -12,7 +12,7 @@ from flask import Flask, Response, request, jsonify
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bookmarks.json")
 APP_PATH = os.path.abspath(__file__)
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/hirogura/selfmark/main"
@@ -2452,11 +2452,12 @@ def api_sync_config_save():
         opposite = SYNC_ROLE_DEST if role == SYNC_ROLE_SOURCE else SYNC_ROLE_SOURCE
         self_url = get_self_base_url()
         payload = {"role": opposite, "peer_url": self_url,
-                   "peer_name": get_self_host_name()}
+                   "peer_name": get_self_host_name(),
+                   "sync_time": sync_time}
         try:
             _http_post_json(peer.rstrip("/") + "/api/sync/role", payload, timeout=10)
             peer_notified = True
-            peer_message = "相手側を「%s」に切り替えました" % ("同期先" if opposite == SYNC_ROLE_DEST else "同期元")
+            peer_message = "相手側を「%s」に切り替え、同期時刻（%s）を共有しました" % ("同期先" if opposite == SYNC_ROLE_DEST else "同期元", sync_time)
         except Exception as e:
             peer_message = f"相手側への通知に失敗しました（相手のselfmarkを最新版に更新してください）: {e}"
     return jsonify({"ok": True, "peer_notified": peer_notified,
@@ -2465,7 +2466,7 @@ def api_sync_config_save():
 
 @app.route("/api/sync/role", methods=["POST"])
 def api_sync_role():
-    """相手PCからの役割連動用。自分の役割を相手の反対に設定する。"""
+    """相手PCからの役割連動用。自分の役割を相手の反対に設定し、同期時刻も共有する。"""
     data = request.json
     if not isinstance(data, dict):
         return jsonify({"ok": False, "error": "invalid request"}), 400
@@ -2481,8 +2482,13 @@ def api_sync_role():
     if peer_url:
         cfg["peer"] = peer_url
         cfg["peer_name"] = peer_name
+    # 同期時刻も共有する（旧バージョンからは送られてこないため任意扱い）。
+    # 形式が正しい場合のみ反映し、不正な値では役割の更新を妨げない。
+    sync_time = (data.get("sync_time", "") or "").strip()
+    if re.match(r"^([01]\d|2[0-3]):[0-5]\d$", sync_time):
+        cfg["sync_time"] = sync_time
     save_sync_config(cfg)
-    return jsonify({"ok": True, "role": role})
+    return jsonify({"ok": True, "role": role, "sync_time": cfg.get("sync_time", "")})
 
 
 @app.route("/api/sync/peers")
