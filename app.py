@@ -12,7 +12,7 @@ from flask import Flask, Response, request, jsonify
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bookmarks.json")
 APP_PATH = os.path.abspath(__file__)
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.2.3"
 SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/hirogura/selfmark/main"
@@ -2439,10 +2439,16 @@ def api_sync_config_save():
     if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", sync_time):
         return jsonify({"ok": False, "error": "同期時刻は HH:MM 形式で指定してください"}), 400
     cfg = load_sync_config()
+    old_sync_time = cfg.get("sync_time", "")
     cfg["role"] = role
     cfg["peer"] = peer
     cfg["peer_name"] = peer_name
     cfg["sync_time"] = sync_time
+    if sync_time != old_sync_time:
+        # 同期時刻が変わったら当日の同期済みフラグをリセットし、
+        # その日のうちに即時テストできるようにする。
+        cfg["last_sync"] = ""
+        cfg["last_result"] = "同期時刻を変更したため、当日の同期済みフラグをリセットしました"
     save_sync_config(cfg)
     # 相手側の役割を反対にそろえる（相手が旧バージョン等で失敗しても保存自体は成功扱い）
     peer_notified = False
@@ -2478,6 +2484,7 @@ def api_sync_role():
     if peer_url and not _is_valid_peer_url(peer_url):
         return jsonify({"ok": False, "error": "invalid peer_url"}), 400
     cfg = load_sync_config()
+    old_sync_time = cfg.get("sync_time", "")
     cfg["role"] = role
     if peer_url:
         cfg["peer"] = peer_url
@@ -2487,6 +2494,11 @@ def api_sync_role():
     sync_time = (data.get("sync_time", "") or "").strip()
     if re.match(r"^([01]\d|2[0-3]):[0-5]\d$", sync_time):
         cfg["sync_time"] = sync_time
+    if re.match(r"^([01]\d|2[0-3]):[0-5]\d$", sync_time) and sync_time != old_sync_time:
+        # 相手側で時刻が変わった場合も当日の同期済みフラグをリセットし、
+        # その日のうちに即時テストできるようにする。
+        cfg["last_sync"] = ""
+        cfg["last_result"] = "同期時刻を変更したため、当日の同期済みフラグをリセットしました"
     save_sync_config(cfg)
     return jsonify({"ok": True, "role": role, "sync_time": cfg.get("sync_time", "")})
 
