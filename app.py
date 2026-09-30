@@ -12,7 +12,7 @@ from flask import Flask, Response, request, jsonify
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bookmarks.json")
 APP_PATH = os.path.abspath(__file__)
-APP_VERSION = "1.2.3"
+APP_VERSION = "1.2.4"
 SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/hirogura/selfmark/main"
@@ -1585,12 +1585,26 @@ function setSyncRole(role) {
     : 'このPCが「同期先」: 相手（同期元）からデータを受け取ります。保存すると相手は自動で「同期元」になります。';
 }
 
+function fmtSyncDate(s) {
+  try {
+    const d = new Date(s);
+    if (isNaN(d)) return s;
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  } catch { return s; }
+}
+
+function fmtSyncText(s) {
+  if (typeof s !== 'string') return s;
+  return s.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g, m => fmtSyncDate(m));
+}
+
 function renderSyncStatus(cfg) {
   const el = document.getElementById('syncStatus');
   const roleLabel = (cfg.role === 'destination') ? '同期先' : '同期元';
   const peerLabel = cfg.peer_name ? `${cfg.peer_name}（${cfg.peer}）` : (cfg.peer || '未設定');
-  const last = cfg.last_sync ? `最終同期: ${cfg.last_sync}` : '最終同期: まだありません';
-  const result = cfg.last_result ? `結果: ${cfg.last_result}` : '';
+  const last = cfg.last_sync ? `最終同期: ${fmtSyncDate(cfg.last_sync)}` : '最終同期: まだありません';
+  const result = cfg.last_result ? `結果: ${fmtSyncText(cfg.last_result)}` : '';
   el.textContent = `役割: ${roleLabel} ／ 相手: ${peerLabel} ／ 時刻: ${cfg.sync_time || '--:--'} ／ ${last}${result ? ' ／ ' + result : ''}`;
 }
 
@@ -1656,9 +1670,9 @@ async function runSyncNow() {
   try {
     const res = await fetch('/api/sync/run', { method: 'POST' });
     const d = await res.json();
-    if (!res.ok || !d.ok) { showToast(d.error || '同期に失敗しました'); }
+    if (!res.ok || !d.ok) { showToast(fmtSyncText(d.error || '同期に失敗しました')); }
     else {
-      showToast(d.message || '同期しました');
+      showToast(fmtSyncText(d.message || '同期しました'));
       refresh();
     }
     const cfgRes = await fetch('/api/sync/config');
