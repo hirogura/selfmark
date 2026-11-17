@@ -12,7 +12,7 @@ from flask import Flask, Response, request, jsonify
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bookmarks.json")
 APP_PATH = os.path.abspath(__file__)
-APP_VERSION = "1.2.4"
+APP_VERSION = "1.3.0"
 SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/hirogura/selfmark/main"
@@ -237,167 +237,169 @@ HTML = r"""<!DOCTYPE html>
 <link rel="apple-touch-icon" href="/selfmark.png">
 <title>selfmark</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #1a1a2e; line-height: 1.5; }
-  .header { background: #0f0f23; color: white; padding: 20px 32px; display: flex; align-items: center; gap: 16px; }
-  .header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
-  .header-admin { margin-left: auto; display: flex; align-items: center; gap: 10px; padding-left: 16px; }
-  .btn-admin { padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid rgba(255,255,255,.25); background: transparent; color: #e8e8f0; transition: all 0.15s ease; white-space: nowrap; }
-  .btn-admin:hover { background: rgba(255,255,255,.12); }
-  .btn-admin:disabled { opacity: .5; cursor: wait; }
-  .version-label { font-size: 12px; font-weight: 600; color: #8a8aa8; white-space: nowrap; }
-  .container { max-width: 960px; margin: 32px auto; padding: 0 24px; }
-  .toolbar { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; align-items: center; }
-  .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; letter-spacing: 0.3px; }
-  .btn-primary { background: #0f0f23; color: white; }
-  .btn-primary:hover { background: #2d2d5e; transform: translateY(-1px); }
-  .btn-secondary { background: #e8e8f0; color: #1a1a2e; }
-  .btn-secondary:hover { background: #d8d8e5; }
-  .btn-success { background: #00c9a7; color: white; }
-  .btn-success:hover { background: #00b396; transform: translateY(-1px); }
-  .btn-danger { background: #e8e8f0; color: #1a1a2e; }
-  .btn-danger:hover { background: #ff6b6b; color: white; }
-  .btn-danger .trash-icon { color: inherit; }
-  .favicon-toggle-wrap { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: white; border-radius: 8px; font-size: 13px; color: #555; border: 1px solid #e8e8f0; }
-  .switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
-  .switch input { opacity: 0; width: 0; height: 0; }
-  .switch-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #d8d8e5; transition: .2s; border-radius: 22px; }
-  .switch-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .2s; border-radius: 50%; }
-  .switch input:checked + .switch-slider { background-color: #00c9a7; }
-  .switch input:checked + .switch-slider:before { transform: translateX(16px); }
-  .card { background: white; border-radius: 12px; padding: 18px 20px; margin-bottom: 10px; display: flex; align-items: center; gap: 16px; cursor: grab; transition: all 0.2s ease; border: 1px solid #f0f0f5; }
-  .card:hover { border-color: #e0e0ea; transform: translateY(-2px); }
-  .card:active { cursor: grabbing; }
-  .card.dragging { opacity: 0.4; transform: scale(0.98); }
-  .card.drag-over { border-top: 3px solid #00c9a7; }
-  .card .drag-handle { color: #d0d0dd; font-size: 16px; cursor: grab; user-select: none; flex-shrink: 0; }
-  .card .drag-handle:hover { color: #999; }
-  .card .icon { width: 48px; height: 48px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
-  .card .info { flex: 1; min-width: 0; }
-  .card .name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #1a1a2e; }
-  .card .url { font-size: 12px; color: #888; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card .url a { color: #6c5ce7; text-decoration: none; }
-  .card .url a:hover { text-decoration: underline; }
-  .card .actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
-  .card .cat-badge { background: #e8f8f5; color: #00b894; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-left: 4px; }
-  .category-group { margin-bottom: 28px; }
-  .category-title { font-size: 13px; font-weight: 700; color: #555; margin-bottom: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; background: white; border-radius: 10px; user-select: none; border: 1px solid #f0f0f5; transition: all 0.15s ease; }
-  .category-title:hover { background: #f8f8fc; border-color: #e0e0ea; }
-  .category-title .cat-icon { font-size: 15px; }
-  .category-title .arrow { font-size: 10px; transition: transform 0.2s; }
-  .category-title.collapsed .arrow { transform: rotate(-90deg); }
-  .category-body { display: block; }
-  .category-body.collapsed { display: none; }
-  .category-group.dragging { opacity: 0.4; transform: scale(0.98); }
-  .category-group.drag-over-cat { border-top: 3px solid #00c9a7; padding-top: 10px; }
-  .drag-handle-cat { color: #d0d0dd; font-size: 14px; cursor: grab; user-select: none; flex-shrink: 0; }
-  .drag-handle-cat:hover { color: #999; }
-  .cat-move-btn { background: none; border: none; color: #bbb; font-size: 11px; cursor: pointer; padding: 4px 6px; border-radius: 6px; line-height: 1; transition: all 0.15s ease; }
-  .cat-move-btn:hover { background: #f0f0f5; color: #1a1a2e; }
-  .cat-input { border: 1px solid #e8e8f0; border-radius: 8px; padding: 8px 12px; font-size: 13px; width: 120px; transition: border-color 0.15s ease; }
-  .cat-input:focus { outline: none; border-color: #6c5ce7; }
-  .cat-suggestions { position: absolute; background: white; border: 1px solid #e8e8f0; border-radius: 8px; z-index: 10; max-height: 150px; overflow-y: auto; display: none; }
-  .cat-suggestions.show { display: block; }
-  .cat-suggestions div { padding: 8px 14px; cursor: pointer; font-size: 13px; }
-  .cat-suggestions div:hover { background: #f8f8fc; }
-  .edit-input { border: 1px solid #e8e8f0; border-radius: 8px; padding: 8px 12px; font-size: 14px; width: 200px; transition: border-color 0.15s ease; }
-  .empty { text-align: center; padding: 48px; color: #aaa; font-size: 14px; }
-  .icon-bg { background: #f0f0f8; color: #6c5ce7; }
-  .toast { position: fixed; bottom: 24px; right: 24px; background: #1a1a2e; color: white; padding: 14px 24px; border-radius: 10px; font-size: 13px; display: none; z-index: 100; font-weight: 500; }
-  .add-form { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; display: none; border: 1px solid #f0f0f5; }
-  .add-form.show { display: block; }
-  .add-form h3 { font-size: 14px; margin-bottom: 16px; color: #555; font-weight: 600; }
-  .form-row { display: flex; gap: 10px; margin-bottom: 10px; }
-  .form-row input { flex: 1; padding: 10px 14px; border: 1px solid #e8e8f0; border-radius: 8px; font-size: 14px; transition: border-color 0.15s ease; }
-  .form-row input:focus { outline: none; border-color: #6c5ce7; }
-  .cat-edit-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f5f5fa; }
-  .cat-edit-item:last-child { border-bottom: none; }
-  .cat-edit-item input { flex: 1; padding: 8px 12px; border: 1px solid #e8e8f0; border-radius: 8px; font-size: 14px; transition: border-color 0.15s ease; }
-  .cat-edit-item input:focus { outline: none; border-color: #6c5ce7; }
-  .cat-edit-item .cat-count { font-size: 11px; color: #aaa; min-width: 40px; }
-  .cat-select { border: 1px solid #e8e8f0; border-radius: 8px; padding: 6px 10px; font-size: 12px; max-width: 120px; background: white; cursor: pointer; transition: border-color 0.15s ease; }
-  .cat-select:focus { outline: none; border-color: #6c5ce7; }
-  .star-btn { background: none; border: none; font-size: 18px; cursor: pointer; padding: 4px 6px; border-radius: 6px; line-height: 1; color: #d0d0dd; transition: all 0.15s ease; }
-  .star-btn:hover { color: #fdcb6e; }
-  .star-btn.on { color: #fdcb6e; }
-  .star-section { margin-bottom: 28px; }
-  .star-title { font-size: 13px; font-weight: 700; color: #f39c12; margin-bottom: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%); border-radius: 10px; border: 1px solid #ffeaa7; }
-  .star-title .cat-icon { font-size: 15px; }
-  .card.starred-view .actions { gap: 6px; }
-  .card.starred-view .info { min-width: 0; }
-  .card.starred-view .name { font-size: 14px; }
-  .favicon-upload { cursor: pointer; transition: opacity 0.2s; }
-  .favicon-upload:hover { opacity: 1 !important; }
-  .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,15,35,.55); display: none; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
-  .modal-overlay.show { display: flex; }
-  .modal { background: white; border-radius: 14px; padding: 22px; width: 640px; max-width: 100%; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
-  .modal h3 { font-size: 15px; margin-bottom: 6px; color: #1a1a2e; font-weight: 700; }
-  .modal .modal-desc { font-size: 12px; color: #888; margin-bottom: 14px; }
-  .icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; margin: 12px 0; }
-  .icon-cell { border: 1px solid #e8e8f0; border-radius: 10px; padding: 10px 6px; text-align: center; cursor: pointer; transition: all 0.15s ease; background: #fafafc; }
-  .icon-cell:hover { border-color: #6c5ce7; background: #f4f2ff; transform: translateY(-1px); }
-  .icon-cell.selected { border-color: #00c9a7; background: #e8f8f5; }
-  .icon-cell img { width: 48px; height: 48px; object-fit: contain; border-radius: 8px; background: white; border: 1px solid #eee; }
-  .icon-cell .icon-name { font-size: 10px; color: #666; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .icon-cell .icon-del { font-size: 10px; color: #bbb; background: none; border: none; cursor: pointer; margin-top: 4px; }
-  .icon-cell .icon-del:hover { color: #ff6b6b; }
-  .card .icon img.custom-icon { width: 48px; height: 48px; object-fit: contain; border-radius: 10px; cursor: pointer; background: white; }
-  .card .icon .icon-click { cursor: pointer; }
-  .sync-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
-  .sync-row label { font-size: 13px; font-weight: 600; color: #555; min-width: 90px; }
-  .sync-role-toggle { display: flex; gap: 0; border: 1px solid #e8e8f0; border-radius: 8px; overflow: hidden; }
-  .sync-role-toggle button { border: none; background: #f4f4f8; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; color: #888; }
-  .sync-role-toggle button.active { background: #0f0f23; color: white; }
-  .sync-status { font-size: 12px; color: #666; background: #f8f8fc; border-radius: 8px; padding: 10px 12px; margin-top: 4px; }
-  .sync-time-input { border: 1px solid #e8e8f0; border-radius: 8px; padding: 8px 12px; font-size: 14px; }
-  .sync-time-input:focus { outline: none; border-color: #6c5ce7; }
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #d0d0dd; border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: #aaa; }
-</style>
+  :root{--bg:#f6f7f9;--surface:#fff;--border:#e2e5ea;--text:#1c2430;--muted:#6b7686;
+        --accent:#2563eb;--accent-soft:#e8effc;--star:#f5a623;--radius:12px}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;
+       background:var(--bg);color:var(--text);line-height:1.5}
+  header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--surface);
+         border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+  header h1{font-size:17px;margin:0;font-weight:700;white-space:nowrap}
+  header .spacer{flex:1}
+  .btn{border:1px solid var(--border);background:var(--surface);border-radius:8px;
+       padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--text)}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{filter:brightness(.95);color:#fff}
+  .btn.danger{color:#d64550}
+  .btn.danger:hover{border-color:#d64550;color:#d64550}
+  .btn:disabled{opacity:.5;cursor:wait}
+  .version-label{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
+  .favicon-toggle-wrap{display:flex;align-items:center}
+  .cat-select{border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;
+       background:var(--surface);cursor:pointer;max-width:160px;color:var(--text)}
+  main{max-width:1200px;margin:0 auto;padding:14px 16px 40px}
+  .quickadd{display:flex;gap:8px;background:var(--surface);border:1px solid var(--border);
+       border-radius:var(--radius);padding:10px;margin-bottom:10px;flex-wrap:wrap}
+  .quickadd input[type=url]{flex:1;border:1px solid var(--border);border-radius:8px;
+       padding:8px 10px;font-size:14px;min-width:180px}
+  .preview{display:none;align-items:center;gap:8px;font-size:13px;color:var(--muted);padding:0 4px 10px}
+  .preview img{width:20px;height:20px;border-radius:4px;object-fit:contain}
+  .preview .dup{color:#d64550;font-weight:600}
+  .searchbar{margin-bottom:10px}
+  .searchbar input{width:100%;border:1px solid var(--border);border-radius:8px;
+       padding:9px 12px;font-size:14px;background:var(--surface)}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .chip{border:1px solid var(--border);background:var(--surface);border-radius:999px;
+       padding:6px 14px;font-size:13px;cursor:pointer;user-select:none;white-space:nowrap}
+  .chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .chip.dragging{opacity:.4}
+  .chip.dragover{outline:2px dashed var(--accent);outline-offset:2px}
+  .section{margin-bottom:22px}
+  .sec-head{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 2px}
+  .sec-head h2{font-size:15px;margin:0}
+  .sec-head .count{color:var(--muted);font-size:12px}
+  .sec-head .arrow{color:var(--muted);font-size:12px;transition:transform .15s}
+  .section.collapsed .sec-head .arrow{transform:rotate(-90deg)}
+  .section.collapsed .grid{display:none}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px}
+  .card.tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+       padding:12px 8px 10px;text-align:center;cursor:pointer;position:relative;
+       transition:border-color .15s,box-shadow .15s}
+  .card.tile:hover{border-color:var(--accent);box-shadow:0 2px 8px rgba(20,40,80,.08)}
+  .card.tile.dragging{opacity:.4}
+  .card.tile.drag-over{border-top:3px solid var(--accent)}
+  .tile .icon{width:36px;height:36px;margin:0 auto;display:flex;align-items:center;justify-content:center}
+  .tile .icon img{width:36px;height:36px;border-radius:8px;object-fit:contain;
+       background:#fff;border:1px solid #eef0f4;cursor:pointer}
+  .tile .letter{width:36px;height:36px;border-radius:8px;background:var(--accent-soft);
+       color:var(--accent);font-weight:700;font-size:17px;display:flex;align-items:center;justify-content:center}
+  .tile .name{margin-top:7px;font-size:12px;line-height:1.35;height:2.7em;overflow:hidden;word-break:break-word}
+  .tile .star,.tile .edit{position:absolute;top:5px;border:none;background:none;cursor:pointer;
+       font-size:13px;color:#c6ccd6;padding:0;line-height:1}
+  .tile .star{right:7px}
+  .tile .edit{left:7px}
+  .tile .star:hover,.tile .edit:hover{color:var(--accent)}
+  .tile .star.on{color:var(--star)}
+  .empty{color:var(--muted);font-size:13px;padding:8px 2px}
+  .footer{display:flex;gap:8px;justify-content:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border)}
+  .toast{position:fixed;bottom:24px;right:24px;background:var(--text);color:#fff;
+       padding:12px 20px;border-radius:10px;font-size:13px;display:none;z-index:300}
+  .add-form{display:none;background:var(--surface);border:1px solid var(--border);
+       border-radius:var(--radius);padding:16px;margin-bottom:10px}
+  .add-form.show{display:block}
+  .add-form h3{font-size:14px;margin-bottom:12px}
+  .form-row{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .form-row input{flex:1;min-width:160px;border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+  .cat-edit-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+  .cat-edit-item input{flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+  .cat-count{font-size:11px;color:var(--muted);min-width:40px}
+  .modal-overlay{position:fixed;inset:0;background:rgba(15,15,35,.55);display:none;
+       align-items:center;justify-content:center;z-index:200;padding:20px}
+  .modal-overlay.show{display:flex}
+  .modal{background:var(--surface);border-radius:14px;padding:22px;width:640px;max-width:100%;
+       max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modal h3{font-size:15px;margin-bottom:6px;font-weight:700}
+  .modal .modal-desc{font-size:12px;color:var(--muted);margin-bottom:14px;word-break:break-all}
+  .edit-fields{display:grid;gap:12px}
+  .edit-fields label{font-size:12px;font-weight:600;color:var(--muted);display:block}
+  .edit-fields input[type=text],.edit-fields input[type=url],.edit-fields select{width:100%;
+       margin-top:4px;border:1px solid var(--border);border-radius:8px;padding:9px 11px;font-size:14px;color:var(--text)}
+  .edit-fields .check{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--text)}
+  .icon-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+  .modal-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+  .icon-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;margin:12px 0}
+  .icon-cell{border:1px solid var(--border);border-radius:10px;padding:10px 6px;text-align:center;
+       cursor:pointer;background:var(--bg)}
+  .icon-cell:hover{border-color:var(--accent)}
+  .icon-cell.selected{border-color:var(--accent);background:var(--accent-soft)}
+  .icon-cell img{width:48px;height:48px;object-fit:contain;border-radius:8px;background:#fff;border:1px solid #eee}
+  .icon-cell .icon-name{font-size:10px;color:var(--muted);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .icon-cell .icon-del{font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;margin-top:4px}
+  .icon-cell .icon-del:hover{color:#d64550}
+  .sync-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  .sync-row label{font-size:13px;font-weight:600;color:var(--muted);min-width:90px}
+  .sync-role-toggle{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  .sync-role-toggle button{border:none;background:var(--bg);padding:8px 18px;font-size:13px;cursor:pointer;color:var(--muted)}
+  .sync-role-toggle button.active{background:var(--accent);color:#fff}
+  .sync-status{font-size:12px;color:var(--muted);background:var(--bg);border-radius:8px;padding:10px 12px}
+  .sync-time-input{border:1px solid var(--border);border-radius:8px;padding:8px 12px}
+  ::-webkit-scrollbar{width:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:#cdd2da;border-radius:3px}
+    </style>
 </head>
 <body>
-<div class="header">
-  <h1>selfmark</h1>
-  <div class="header-admin">
-    <button class="btn-admin" id="btnIconStore" title="ブックマーク用アイコンをアップロード・管理" onclick="openIconManager()">アイコン置き場</button>
-    <button class="btn-admin" id="btnExtension" title="Chrome拡張機能（selfmark-extension-v17.zip）をダウンロード" onclick="downloadExtension()">Google Chrome 拡張機能</button>
-    <button class="btn-admin" id="btnInstallSub" title="閲覧専用ビュー（selfmark-sub）をポート3357にインストール" onclick="installSub()">selfmark-subインストール</button>
-    <button class="btn-admin" id="btnSync" title="別PCのselfmarkとブックマークを同期" onclick="openSyncSettings()">同期</button>
-    <button class="btn-admin" id="btnAdminUpdate" title="GitHubから最新版を取得してアップデート" onclick="adminUpdate()">アップデート</button>
-    <button class="btn-admin" id="btnAdminRestart" title="selfmarkサービスを再起動" onclick="adminRestart()">再起動</button>
-    <span class="version-label" id="appVersion"></span>
-  </div>
-</div>
-<div class="container">
-  <div class="toolbar">
-    <button class="btn btn-success" onclick="toggleAddForm()">＋ ブックマーク追加</button>
-    <button class="btn btn-primary" onclick="showCatEditor()">📂 カテゴリー編集</button>
-    <label class="favicon-toggle-wrap">
-      <select class="cat-select" id="faviconModeSelect" onchange="onFaviconModeChange(this.value)" style="font-size:13px;padding:4px 8px;">
-        <option value="0">ファビコン取得しない</option>
-        <option value="1">キャッシュ利用</option>
-        <option value="2">ファビコン取得</option>
-      </select>
-    </label>
-    <button class="btn btn-success" onclick="saveAll()" id="saveBtn" style="display:none">💾 保存</button>
+<header>
+  <h1>🔖 selfmark</h1>
+  <div class="spacer"></div>
+  <button class="btn" onclick="openIconManager()" title="ブックマーク用アイコンをアップロード・管理">アイコン置き場</button>
+  <button class="btn" onclick="showCatEditor()" title="カテゴリーの追加・改名・削除">カテゴリー編集</button>
+  <label class="favicon-toggle-wrap">
+    <select class="cat-select" id="faviconModeSelect" onchange="onFaviconModeChange(this.value)" title="ファビコン取得設定">
+      <option value="0">ファビコン取得しない</option>
+      <option value="1">キャッシュ利用</option>
+      <option value="2">ファビコン取得</option>
+    </select>
+  </label>
+  <button class="btn" id="saveBtn" style="display:none" onclick="saveAll()">💾 保存</button>
+  <button class="btn" id="btnExtension" onclick="downloadExtension()" title="Chrome拡張機能をダウンロード">拡張機能</button>
+  <button class="btn" id="btnInstallSub" onclick="installSub()" title="閲覧専用ビューをインストール">subインストール</button>
+  <button class="btn" id="btnSync" onclick="openSyncSettings()" title="別PCとブックマークを同期">同期</button>
+  <button class="btn" id="btnAdminUpdate" onclick="adminUpdate()" title="GitHubから最新版を取得">更新</button>
+  <button class="btn" id="btnAdminRestart" onclick="adminRestart()" title="selfmarkを再起動">再起動</button>
+  <span class="version-label" id="appVersion"></span>
+</header>
+<main>
+  <form class="quickadd" id="quickadd" onsubmit="quickAdd(event)">
+    <input type="url" id="qa-url" placeholder="URLを貼り付けて追加（例：https://example.com）" required>
+    <select class="cat-select" id="qa-cat"></select>
+    <button class="btn" type="button" onclick="openQuickIconPicker()" title="アイコンを指定">🖼️ アイコン</button>
+    <button class="btn primary" type="submit">追加</button>
+  </form>
+  <div class="preview" id="qa-preview">
+    <img id="qa-icon" alt="">
+    <span id="qa-title"></span>
   </div>
 
+  <div class="searchbar"><input id="search" type="search" placeholder="検索（名前・URL）"></div>
+  <div class="chips" id="chips"></div>
+  <div id="bookmarkList"></div>
+
   <div class="add-form" id="addForm">
-    <h3>ブックマークを追加</h3>
+    <h3>ブックマークを追加（詳細）</h3>
     <div class="form-row">
       <input type="text" id="addUrl" placeholder="URL (例: https://example.com)">
       <input type="text" id="addName" placeholder="名前 (例: Nextcloud)">
     </div>
     <div class="form-row">
-      <select class="cat-select" id="addCategorySelect" style="max-width:200px" onchange="document.getElementById('addCategory').value=''">
+      <select class="cat-select" id="addCategorySelect" onchange="document.getElementById('addCategory').value=''">
         <option value="">-- カテゴリー選択 --</option>
       </select>
       <input type="text" id="addCategory" placeholder="または新規入力">
     </div>
-    <button class="btn btn-primary" onclick="addBookmark()">追加</button>
-    <button class="btn btn-secondary" onclick="toggleAddForm()">キャンセル</button>
+    <button class="btn primary" onclick="addBookmark()">追加</button>
+    <button class="btn" onclick="toggleAddForm()">キャンセル</button>
   </div>
 
   <div class="add-form" id="catEditor">
@@ -405,19 +407,17 @@ HTML = r"""<!DOCTYPE html>
     <div id="catEditorList"></div>
     <div class="form-row" style="margin-top:12px">
       <input type="text" id="newCatName" placeholder="新しいカテゴリー名">
-      <button class="btn btn-primary" onclick="addCategory()">追加</button>
+      <button class="btn primary" onclick="addCategory()">追加</button>
     </div>
-    <button class="btn btn-secondary" onclick="closeCatEditor()" style="margin-top:8px">閉じる</button>
+    <button class="btn" onclick="closeCatEditor()" style="margin-top:8px">閉じる</button>
   </div>
 
-  <div id="bookmarkList"></div>
-
-  <div style="margin-top:32px; padding-top:16px; border-top:1px solid #ddd; display:flex; gap:8px; justify-content:center;">
-    <button class="btn btn-secondary" onclick="exportData()">📥 エクスポート</button>
-    <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()">📤 インポート</button>
+  <div class="footer">
+    <button class="btn" onclick="exportData()">📥 エクスポート</button>
+    <button class="btn" onclick="document.getElementById('importFile').click()">📤 インポート</button>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
   </div>
-</div>
+</main>
 <div class="toast" id="toast"></div>
 <input type="file" id="faviconFileInput" accept="image/*" style="display:none" onchange="handleFaviconUpload(event)">
 <input type="file" id="iconStoreFileInput" accept="image/*,.ico,.svg" multiple style="display:none" onchange="handleIconStoreUpload(event)">
@@ -485,6 +485,36 @@ HTML = r"""<!DOCTYPE html>
   </div>
 </div>
 
+
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h3>ブックマークを編集</h3>
+    <div class="modal-desc" id="editTarget"></div>
+    <div class="edit-fields">
+      <label>名前<input type="text" id="editName"></label>
+      <label>URL<input type="url" id="editUrl"></label>
+      <label>カテゴリー<select id="editCat"></select></label>
+      <label class="check"><input type="checkbox" id="editStar"> ★ お気に入り</label>
+      <div class="icon-row">
+        <span>アイコン:</span>
+        <span id="editIconName"></span>
+        <button class="btn" type="button" onclick="editPickIcon()">置き場から選択</button>
+        <button class="btn" type="button" onclick="editClearIcon()">自動取得に戻す</button>
+      </div>
+      <div class="icon-row">
+        <span>並び順:</span>
+        <button class="btn" type="button" onclick="moveEdit(-1)">▲ 上へ</button>
+        <button class="btn" type="button" onclick="moveEdit(1)">▼ 下へ</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn primary" type="button" onclick="saveEdit()">保存</button>
+      <button class="btn danger" type="button" onclick="deleteEdit()">削除</button>
+      <button class="btn" type="button" onclick="closeEdit()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let bookmarks = [];
 let editedCats = {};
@@ -499,6 +529,16 @@ let dirty = false;
 let faviconMode = 0;
 let customIcons = [];
 let iconPickerTargetUrl = null;
+let iconPickerMode = 'bookmark';
+let quickAddIcon = '';
+let editingIndex = -1;
+let query = '';
+let chipOrder = [];
+let activeChip = '__all__';
+let collapsed = new Set();
+
+const CHIP_ORDER_KEY = 'selfmark_chip_order';
+const COLLAPSED_KEY = 'selfmark_collapsed_sections';
 
 function escapeHtml(s) {
   const d = document.createElement('div');
@@ -530,7 +570,8 @@ function showToast(msg) {
 
 function markDirty() {
   dirty = true;
-  document.getElementById('saveBtn').style.display = 'inline-block';
+  const b = document.getElementById('saveBtn');
+  if (b) b.style.display = 'inline-block';
 }
 
 function toggleAddForm() {
@@ -609,9 +650,11 @@ function refresh() {
     faviconMode = data.favicon_mode || 0;
     document.getElementById('faviconModeSelect').value = faviconMode;
     collectCategories();
-    allCategories.forEach(c => catCollapsed[c] = true);
-    catCollapsed['_none'] = true;
-    document.getElementById('saveBtn').style.display = 'none';
+    collapsed = loadCollapsed();
+    ensureChipOrder();
+    activeChip = '__all__';
+    const b = document.getElementById('saveBtn');
+    if (b) b.style.display = 'none';
     dirty = false;
     render();
   });
@@ -700,6 +743,7 @@ function resolvePickerIndex() {
 function openIconPicker(i) {
   const s = bookmarks[i];
   if (!s) return;
+  iconPickerMode = 'bookmark';
   iconPickerTargetUrl = s.url;
   const label = `${s.name}（${s.url}）`;
   document.getElementById('iconPickerTarget').textContent = `対象: ${label}`;
@@ -710,6 +754,15 @@ function openIconPicker(i) {
 function closeIconPicker() {
   document.getElementById('iconPickerModal').classList.remove('show');
   iconPickerTargetUrl = null;
+  iconPickerMode = 'bookmark';
+}
+
+function openQuickIconPicker() {
+  iconPickerMode = 'quickadd';
+  iconPickerTargetUrl = null;
+  document.getElementById('iconPickerTarget').textContent = '追加するブックマークのアイコンを選択';
+  document.getElementById('iconPickerModal').classList.add('show');
+  renderIconPicker();
 }
 
 function renderIconPicker() {
@@ -717,7 +770,7 @@ function renderIconPicker() {
   const empty = document.getElementById('iconPickerEmpty');
   if (!grid || !empty) return;
   const idx = resolvePickerIndex();
-  const cur = idx >= 0 ? (bookmarks[idx].icon || '') : '';
+  const cur = iconPickerMode === 'quickadd' ? quickAddIcon : (idx >= 0 ? (bookmarks[idx].icon || '') : '');
   if (customIcons.length === 0) {
     grid.innerHTML = '';
     empty.style.display = 'block';
@@ -732,26 +785,46 @@ function renderIconPicker() {
 }
 
 function selectBookmarkIcon(name) {
+  if (iconPickerMode === 'quickadd') {
+    quickAddIcon = name;
+    closeIconPicker();
+    updateQuickPreview();
+    showToast('アイコンを設定しました');
+    return;
+  }
   const idx = resolvePickerIndex();
   if (idx < 0) { closeIconPicker(); return; }
   bookmarks[idx].icon = name;
   markDirty();
   closeIconPicker();
   render();
+  if (editingIndex >= 0) renderEditIcon();
   showToast('アイコンを設定しました。「💾 保存」を押してください');
 }
 
 function clearBookmarkIcon() {
+  if (iconPickerMode === 'quickadd') {
+    quickAddIcon = '';
+    closeIconPicker();
+    updateQuickPreview();
+    showToast('アイコンを外しました');
+    return;
+  }
   const idx = resolvePickerIndex();
   if (idx < 0) { closeIconPicker(); return; }
   delete bookmarks[idx].icon;
   markDirty();
   closeIconPicker();
   render();
+  if (editingIndex >= 0) renderEditIcon();
   showToast('アイコンを外しました。「💾 保存」を押してください');
 }
 
 function uploadFaviconForPickerTarget() {
+  if (iconPickerMode === 'quickadd') {
+    document.getElementById('iconPickerFileInput').click();
+    return;
+  }
   // 従来のファビコン直接アップロード導線（URL単位のキャッシュに保存）
   const idx = resolvePickerIndex();
   if (idx < 0) { closeIconPicker(); return; }
@@ -769,6 +842,13 @@ function handleIconPickerUpload(e) {
     .then(data => {
       if (data.ok) {
         refreshIconList();
+        if (iconPickerMode === 'quickadd') {
+          quickAddIcon = data.name;
+          closeIconPicker();
+          updateQuickPreview();
+          showToast('アップロードして設定しました');
+          return;
+        }
         // そのまま対象ブックマークに設定
         const idx = resolvePickerIndex();
         if (idx >= 0) {
@@ -832,186 +912,318 @@ function advanceFavicon(img) {
   } else {
     img.onerror = null;
     img.style.display = 'none';
-    img.nextElementSibling.style.display = 'block';
+    img.nextElementSibling.style.display = 'flex';
   }
 }
 
-function renderCard(s, i, compact) {
-  const cat = getCat(i);
-  const isEditing = s._editing;
-  const isUrlEditing = s._urlEditing;
-  const catBadge = cat ? `<span class="cat-badge">${escapeHtml(cat)}</span>` : '';
-  const isStarred = s.starred;
-  const starClass = isStarred ? 'on' : '';
-  const starIcon = isStarred ? '\u2605' : '\u2606';
-  const starAction = isStarred ? `unstarBookmark(${i})` : `starBookmark(${i})`;
-  // アイコン置き場で設定したカスタムアイコンを優先表示（左側サムネイル）
-  let customIconHtml = '';
-  if (s.icon) {
-    const iconSrc = '/icon/' + encodeURIComponent(s.icon);
-    customIconHtml = '<img class="custom-icon icon-click" loading="lazy" draggable="false" src="' + iconSrc + '" title="アイコンを変更（' + escapeHtml(s.icon) + '）" onclick="openIconPicker(' + i + ')" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'">'
-      + '<span style="display:none;font-size:20px;opacity:0.6;cursor:pointer;" onclick="openIconPicker(' + i + ')" title="アイコンを設定">\u{1F4CC}</span>';
+
+// ---- チップ並び順・折りたたみ状態（UI状態は localStorage、カテゴリー順は cat_order と共有） ----
+function defaultChipOrder() {
+  return ['__all__', '__starred__', ...getSortedCategories(), '__none__'];
+}
+
+function ensureChipOrder() {
+  const cats = getSortedCategories();
+  const valid = ['__all__', '__starred__', '__none__', ...cats];
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(CHIP_ORDER_KEY) || 'null'); } catch(e) {}
+  let order = Array.isArray(stored) ? stored.filter(k => valid.includes(k)) : [];
+  if (order.length === 0) order = defaultChipOrder();
+  const noneIdx = order.indexOf('__none__');
+  cats.forEach(c => { if (!order.includes(c)) order.splice(noneIdx < 0 ? order.length : noneIdx, 0, c); });
+  ['__all__', '__starred__', '__none__'].forEach(k => { if (!order.includes(k)) order.push(k); });
+  chipOrder = order;
+}
+
+function saveChipOrder() {
+  try { localStorage.setItem(CHIP_ORDER_KEY, JSON.stringify(chipOrder)); } catch(e) {}
+  const cats = chipOrder.filter(k => k !== '__all__' && k !== '__starred__' && k !== '__none__');
+  if (JSON.stringify(cats) !== JSON.stringify(catOrder)) {
+    catOrder = cats;
+    markDirty();
+    saveAll();
   }
-  let faviconHtml = '<span class="icon-click" style="font-size:20px;opacity:0.6;" onclick="openIconPicker(' + i + ')" title="アイコンを設定">\u{1F4CC}</span>';
+}
+
+function loadCollapsed() {
+  try { return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]')); } catch(e) { return new Set(); }
+}
+
+function saveCollapsed() {
+  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])); } catch(e) {}
+}
+
+function toggleSection(key) {
+  if (collapsed.has(key)) collapsed.delete(key); else collapsed.add(key);
+  saveCollapsed();
+  render();
+}
+
+function chipLabel(key) {
+  if (key === '__all__') return 'すべて';
+  if (key === '__starred__') return '★ お気に入り';
+  if (key === '__none__') return '未分類';
+  return key;
+}
+
+function renderChips() {
+  const wrap = document.getElementById('chips');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  chipOrder.forEach(key => {
+    if (key === '__none__' && !bookmarks.some((s, i) => !getCat(i))) return;
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'chip' + (activeChip === key ? ' active' : '');
+    el.textContent = chipLabel(key);   // 件数はチップに出さない（見出し側にのみ表示）
+    el.draggable = true;
+    el.dataset.key = key;
+    el.addEventListener('click', () => { activeChip = key; render(); });
+    el.addEventListener('dragstart', e => {
+      el.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', key);
+    });
+    el.addEventListener('dragend', () => el.classList.remove('dragging'));
+    el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('dragover'); });
+    el.addEventListener('dragleave', () => el.classList.remove('dragover'));
+    el.addEventListener('drop', e => {
+      e.preventDefault();
+      el.classList.remove('dragover');
+      const from = e.dataTransfer.getData('text/plain');
+      const fi = chipOrder.indexOf(from), ti = chipOrder.indexOf(key);
+      if (fi < 0 || ti < 0 || fi === ti) return;
+      chipOrder.splice(fi, 1);
+      chipOrder.splice(ti, 0, from);
+      saveChipOrder();                  // ドロップ確定時に保存（セクション順も連動）
+      render();
+    });
+    wrap.appendChild(el);
+  });
+}
+
+function sectionItems(key) {
+  let items = bookmarks.map((s, i) => ({s, i}));
+  if (key === '__starred__') items = items.filter(({s}) => s.starred);
+  else if (key === '__none__') items = items.filter(({i}) => !getCat(i));
+  else items = items.filter(({i}) => getCat(i) === key);
+
+  if (key === '__starred__') {
+    // 旧データで starredOrder に無いお気に入りを補完（ドラッグ時の位置特定に必要）
+    items.forEach(({s}) => { if (!starredOrder.includes(s.url)) starredOrder.push(s.url); });
+    const found = starredOrder.map(url => items.find(x => x.s.url === url)).filter(Boolean);
+    items = found.concat(items.filter(x => !starredOrder.includes(x.s.url)));
+  } else {
+    items = applyItemOrderToGroup(items, key === '__none__' ? '' : key);
+  }
+  if (query) {
+    const q = query.toLowerCase();
+    items = items.filter(({s}) => s.name.toLowerCase().includes(q) || s.url.toLowerCase().includes(q));
+  }
+  return items;
+}
+
+function tileIconHtml(s) {
+  const letter = ((s.name || '?').trim().charAt(0) || '?');
+  const letterHtml = `<div class="letter">${escapeHtml(letter)}</div>`;
+  if (s.icon) {
+    const src = '/icon/' + encodeURIComponent(s.icon);
+    return `<img class="tile-icon" loading="lazy" draggable="false" src="${src}" alt=""
+      title="${escapeHtml(s.icon)}"
+      onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+      + letterHtml.replace('class="letter"', 'class="letter" style="display:none"');
+  }
   if (faviconMode >= 1) {
     const cachedSrc = '/api/favicon?url=' + encodeURIComponent(s.url);
     const fallbackSources = [];
     if (faviconMode === 2) {
       try {
-        const url = new URL(s.url);
-        if (['http:', 'https:'].includes(url.protocol)) {
-          ['ico', 'png', 'svg'].forEach(ext => fallbackSources.push(url.origin + '/favicon.' + ext));
+        const u = new URL(s.url);
+        if (['http:', 'https:'].includes(u.protocol)) {
+          ['ico', 'png', 'svg'].forEach(ext => fallbackSources.push(u.origin + '/favicon.' + ext));
         }
       } catch(e) {}
     }
-    faviconHtml = '<img loading="lazy" src="' + cachedSrc + '" data-fallback-sources="' + encodeURIComponent(JSON.stringify(fallbackSources)) + '" width="24" height="24" style="border-radius:4px;cursor:pointer;" onclick="openIconPicker(' + i + ')" title="アイコンを設定" onerror="advanceFavicon(this)"><span style="display:none;cursor:pointer;font-size:20px;opacity:0.6;" onclick="openIconPicker(' + i + ')" title="アイコンを設定">\u{1F4CC}</span>';
+    return `<img class="tile-icon" loading="lazy" draggable="false" src="${cachedSrc}"
+      data-fallback-sources="${encodeURIComponent(JSON.stringify(fallbackSources))}" alt=""
+      onerror="advanceFavicon(this)">`
+      + letterHtml.replace('class="letter"', 'class="letter" style="display:none"');
   }
-  const iconHtml = customIconHtml || faviconHtml;
+  return letterHtml;  // アイコンが無い場合は文字タイル
+}
 
-  if (compact) {
-    const starIdx = starredOrder.indexOf(s.url);
-    return `<div class="card starred-view" draggable="true" data-star-index="${i}" data-star-order="${starIdx}"
-      ondragstart="onStarDragStart(event)" ondragover="onStarDragOver(event)" ondragleave="onStarDragLeave(event)" ondrop="onStarDrop(event)" ondragend="onStarDragEnd(event)">
-      <span class="drag-handle">\u2807</span>
-      <div class="icon icon-bg">${iconHtml}</div>
-      <div class="info">
-        <div class="name">${escapeHtml(s.name)}</div>
-        <div class="url"><a href="${safeHttpUrl(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.url)}</a></div>
-      </div>
-      <div class="actions">
-        <button class="star-btn on" onclick="unstarBookmark(${i})" title="\u30b9\u30bf\u30fc\u5916\u308b">\u2605</button>
-        <button class="cat-move-btn" onclick="moveStarred(${starIdx}, -1)" title="\u4e0a\u306b\u79fb\u52d5">\u25B2</button>
-        <button class="cat-move-btn" onclick="moveStarred(${starIdx}, 1)" title="\u4e0b\u306b\u79fb\u52d5">\u25BC</button>
-      </div>
-    </div>`;
-  }
-
-  return `<div class="card" draggable="true" data-index="${i}"
-    ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)" ondragend="onDragEnd(event)">
-    <span class="drag-handle">\u2807</span>
-    <div class="icon icon-bg">${iconHtml}</div>
-    <div class="info">
-      ${isEditing
-        ? `<input class="edit-input" value="${escapeHtml(s.name)}" onchange="updateName(${i}, this.value)" onblur="stopEdit(${i})" id="edit_${i}">`
-        : `<div class="name">${escapeHtml(s.name)}${catBadge}</div>`
-      }
-      ${isUrlEditing
-        ? `<input class="edit-input" style="margin-top:4px;font-size:12px;width:100%;" value="${escapeHtml(s.url)}" onchange="updateUrl(${i}, this.value)" onblur="stopUrlEdit(${i})" id="url_edit_${i}">`
-        : `<div class="url"><a href="${safeHttpUrl(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.url)}</a></div>`
-      }
-    </div>
-    <div class="actions">
-      <button class="star-btn ${starClass}" onclick="${starAction}" title="\u304a\u6c17\u306b\u5165\u308a">${starIcon}</button>
-      <button class="cat-move-btn" onclick="moveInCategory(${i}, -1)" title="\u4e0a\u306b\u79fb\u52d5">\u25B2</button>
-      <button class="cat-move-btn" onclick="moveInCategory(${i}, 1)" title="\u4e0b\u306b\u79fb\u52d5">\u25BC</button>
-      <select class="cat-select" onchange="updateCategory(${i}, this.value)">
-        <option value="">\u672a\u5206\u985e</option>
-        ${getSortedCategories().map(c => `<option value="${escapeHtml(c)}" ${c === cat ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
-      </select>
-      <button class="btn btn-secondary" onclick="startEdit(${i})">\u270f\uFE0F</button>
-      <button class="btn btn-secondary" onclick="startUrlEdit(${i})" title="URL\u7de8\u96c6">\u{1F517}</button>
-      <button class="btn btn-danger" onclick="removeBookmark(${i})"><span class="trash-icon">\u{1F5D1}\uFE0F</span></button>
-    </div>
+function renderCard(s, i, compact) {
+  const isStarred = !!s.starred;
+  const dragAttrs = compact
+    ? `ondragstart="onStarDragStart(event)" ondragover="onStarDragOver(event)" ondragleave="onStarDragLeave(event)" ondrop="onStarDrop(event)" ondragend="onStarDragEnd(event)"`
+    : `ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)" ondragend="onDragEnd(event)"`;
+  const starAction = isStarred ? `unstarBookmark(${i})` : `starBookmark(${i})`;
+  return `<div class="card tile" draggable="true" data-index="${i}" data-star-index="${i}"
+    data-star-order="${starredOrder.indexOf(s.url)}" ${dragAttrs}
+    ondblclick="openEdit(${i})" title="${escapeHtml(s.name)}">
+    <button class="edit" onclick="event.stopPropagation();openEdit(${i})" title="編集">✎</button>
+    <button class="star${isStarred ? ' on' : ''}" onclick="event.stopPropagation();${starAction}" title="お気に入り">★</button>
+    <div class="icon">${tileIconHtml(s)}</div>
+    <div class="name">${escapeHtml(s.name)}</div>
   </div>`;
 }
 
 function render() {
-  const visible = bookmarks.map((s, i) => ({s, i, cat: getCat(i)}));
-  const groups = {};
-  const noCategory = [];
-  visible.forEach(({s, i, cat}) => {
-    if (cat) {
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push({s, i});
-    } else {
-      noCategory.push({s, i});
-    }
-  });
-
-  // カテゴリー内のアイテム順を itemOrder で調整
-  Object.keys(groups).forEach(cat => {
-    groups[cat] = applyItemOrderToGroup(groups[cat], cat);
-  });
-  const noCategorySorted = applyItemOrderToGroup(noCategory, '');
-
   const containerEl = document.getElementById('bookmarkList');
+  if (!containerEl) return;
+  ensureChipOrder();
+  if (!chipOrder.includes(activeChip)) activeChip = '__all__';
+  renderChips();
+  fillQaCats();
+
+  const keys = activeChip === '__all__' ? chipOrder.filter(k => k !== '__all__') : [activeChip];
   let html = '';
-
-  const starredItems = bookmarks.map((s, i) => ({s, i})).filter(({s}) => s.starred);
-  starredItems.forEach(({s}) => {
-    if (!starredOrder.includes(s.url)) starredOrder.push(s.url);
+  keys.forEach(key => {
+    const items = sectionItems(key);
+    if (activeChip === '__all__' && items.length === 0 && !query) return;
+    const collapsedCls = collapsed.has(key) ? ' collapsed' : '';
+    const bodyHtml = items.length === 0
+      ? '<div class="empty">該当するブックマークがありません</div>'
+      : `<div class="grid">${items.map(({s, i}) => renderCard(s, i, key === '__starred__')).join('')}</div>`;
+    html += `<section class="section${collapsedCls}" data-key="${jsSq(key)}">
+      <div class="sec-head" onclick="toggleSection('${jsSq(key)}')">
+        <span class="arrow">▼</span><h2>${chipLabel(key)}</h2><span class="count">${items.length}件</span>
+      </div>${bodyHtml}</section>`;
   });
-  const sortedStarred = starredOrder.length > 0
-    ? starredOrder.map(url => starredItems.find(({s}) => s.url === url)).filter(Boolean)
-    : starredItems;
-  const starredInOrder = sortedStarred;
-
-  if (starredInOrder.length > 0) {
-    html += `<div class="star-section">
-      <div class="star-title"><span class="cat-icon">\u2b50</span> \u304a\u6c17\u306b\u5165\u308a</div>
-      ${starredInOrder.map(({s, i}) => renderCard(s, i, true)).join('')}
-    </div>`;
+  if (html === '') {
+    html = '<div class="empty">ブックマークがありません。上のURL欄から追加してください。</div>';
   }
-
-  const defaultCats = [...new Set([...Object.keys(groups), ...allCategories])].sort();
-  const sortedCats = catOrder.length > 0
-    ? catOrder.filter(c => defaultCats.includes(c)).concat(defaultCats.filter(c => !catOrder.includes(c)))
-    : defaultCats;
-
-  sortedCats.forEach((cat, catIdx) => {
-    const catId = 'cat-' + catIdx;
-    const isCollapsed = catCollapsed[cat] !== false;
-    const collapsedClass = isCollapsed ? 'collapsed' : '';
-    const catItems = groups[cat] || [];
-    html += `<div class="category-group" draggable="true" data-cat="${escapeHtml(cat)}"
-      ondragstart="onCatDragStart(event)" ondragover="onCatDragOver(event)" ondragleave="onCatDragLeave(event)" ondrop="onCatDrop(event)" ondragend="onCatDragEnd(event)">
-      <div class="category-title ${collapsedClass}" onclick="toggleCategory('${catId}', '${jsSq(cat)}')">
-        <span class="arrow">\u25BC</span>
-        <span class="drag-handle-cat" onclick="event.stopPropagation()">\u2807</span>
-        <span class="cat-icon">\u{1F4C2}</span> ${escapeHtml(cat)}
-        <span style="margin-left:auto;display:flex;align-items:center;gap:2px;">
-          <button class="cat-move-btn" onclick="event.stopPropagation();moveCategory('${jsSq(cat)}', -1)" title="\u4e0a\u306b\u79fb\u52d5">\u25B2</button>
-          <button class="cat-move-btn" onclick="event.stopPropagation();moveCategory('${jsSq(cat)}', 1)" title="\u4e0b\u306b\u79fb\u52d5">\u25BC</button>
-          <span style="font-size:12px;color:#999;margin-left:4px;">${catItems.length}</span>
-        </span>
-      </div>
-      <div class="category-body ${collapsedClass}" id="${catId}">
-        ${catItems.length > 0 ? catItems.map(({s, i}) => renderCard(s, i)).join('') : '<div class="empty" style="padding:16px;font-size:13px;">\u3053\u306e\u30ab\u30c6\u30b4\u30ea\u30fc\u306b\u306f\u307e\u3060\u30d6\u30c3\u30af\u30de\u30fc\u30af\u304c\u3042\u308a\u307e\u305b\u3093</div>'}
-      </div>
-    </div>`;
-  });
-
-  if (noCategory.length > 0) {
-    const noCatId = 'cat-none';
-    const isCollapsedNone = catCollapsed['_none'] !== false;
-    const collapsedClassNone = isCollapsedNone ? 'collapsed' : '';
-    if (sortedCats.length > 0) {
-      html += `<div class="category-group" draggable="true" data-cat="_none"
-        ondragstart="onCatDragStart(event)" ondragover="onCatDragOver(event)" ondragleave="onCatDragLeave(event)" ondrop="onCatDrop(event)" ondragend="onCatDragEnd(event)">
-        <div class="category-title ${collapsedClassNone}" onclick="toggleCategory('${noCatId}', '_none')">
-          <span class="arrow">\u25BC</span>
-          <span class="drag-handle-cat" onclick="event.stopPropagation()">\u2807</span>
-          <span class="cat-icon">\u{1F4CB}</span> \u672a\u5206\u985e
-          <span style="margin-left:auto;display:flex;align-items:center;gap:2px;">
-            <button class="cat-move-btn" onclick="event.stopPropagation();moveCategory('_none', -1)" title="\u4e0a\u306b\u79fb\u52d5">\u25B2</button>
-            <button class="cat-move-btn" onclick="event.stopPropagation();moveCategory('_none', 1)" title="\u4e0b\u306b\u79fb\u52d5">\u25BC</button>
-            <span style="font-size:12px;color:#999;margin-left:4px;">${noCategorySorted.length}</span>
-          </span>
-        </div>
-        <div class="category-body ${collapsedClassNone}" id="${noCatId}">
-          ${noCategorySorted.map(({s, i}) => renderCard(s, i)).join('')}
-        </div>
-      </div>`;
-    } else {
-      html = noCategorySorted.map(({s, i}) => renderCard(s, i)).join('');
-    }
-  }
-
-  if (bookmarks.length === 0) {
-    html = '<div class="empty">\u30d6\u30c3\u30af\u30de\u30fc\u30af\u304c\u3042\u308a\u307e\u305b\u3093\u3002\u201c\uff0b \u30d6\u30c3\u30af\u30de\u30fc\u30af\u8ffd\u52a0\u201d\u304b\u3089\u8ffd\u52a0\u3057\u3066\u304f\u3060\u3055\u3044\u3002</div>';
-  }
-
   containerEl.innerHTML = html;
+}
+
+// ---- クイック追加（URL のみ入力。タイトル／アイコンは自動取得・選択） ----
+function updateQuickPreview() {
+  const pv = document.getElementById('qa-preview');
+  if (!pv) return;
+  const v = document.getElementById('qa-url').value.trim();
+  if (!v) { pv.style.display = 'none'; return; }
+  try {
+    const u = new URL(v);
+    const iconSrc = quickAddIcon
+      ? '/icon/' + encodeURIComponent(quickAddIcon)
+      : '/api/favicon?url=' + encodeURIComponent(v);
+    document.getElementById('qa-icon').src = iconSrc;
+    const dup = bookmarks.some(s => s.url === v);
+    const title = document.getElementById('qa-title');
+    title.textContent = u.hostname + ' を追加' + (dup ? '（既に追加済みです）' : '');
+    title.className = dup ? 'dup' : '';
+    pv.style.display = 'flex';
+  } catch(e) {
+    pv.style.display = 'none';
+  }
+}
+
+function fillQaCats() {
+  const sel = document.getElementById('qa-cat');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">カテゴリーなし</option>' +
+    getSortedCategories().map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+
+function quickAdd(e) {
+  e.preventDefault();
+  const url = document.getElementById('qa-url').value.trim();
+  if (!url) return;
+  if (bookmarks.some(s => s.url === url)) { showToast('このURLは既に追加済みです'); return; }
+  let name;
+  try { name = new URL(url).hostname; } catch(err) { name = url; }
+  const category = document.getElementById('qa-cat').value;
+  const entry = {name, url, category, starred: false};
+  if (quickAddIcon) entry.icon = quickAddIcon;
+  bookmarks.push(entry);
+  if (category && !allCategories.includes(category)) allCategories.push(category);
+  const key = getItemOrderKey(category);
+  if (!itemOrder[key]) itemOrder[key] = [];
+  itemOrder[key].push(url);
+  if (category && !chipOrder.includes(category)) {
+    const noneIdx = chipOrder.indexOf('__none__');
+    chipOrder.splice(noneIdx < 0 ? chipOrder.length : noneIdx, 0, category);
+    saveChipOrder();
+  }
+  document.getElementById('qa-url').value = '';
+  quickAddIcon = '';
+  document.getElementById('qa-preview').style.display = 'none';
+  render();
+  saveAll();
+}
+
+// ---- 編集モーダル ----
+function openEdit(i) {
+  const s = bookmarks[i];
+  if (!s) return;
+  editingIndex = i;
+  document.getElementById('editTarget').textContent = s.url;
+  document.getElementById('editName').value = s.name;
+  document.getElementById('editUrl').value = s.url;
+  const cat = getCat(i);
+  const sel = document.getElementById('editCat');
+  sel.innerHTML = '<option value="">未分類</option>' +
+    getSortedCategories().map(c => `<option value="${escapeHtml(c)}"${c === cat ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
+  document.getElementById('editStar').checked = !!s.starred;
+  renderEditIcon();
+  document.getElementById('editModal').classList.add('show');
+}
+
+function renderEditIcon() {
+  const s = bookmarks[editingIndex];
+  if (!s) return;
+  document.getElementById('editIconName').textContent = s.icon || '自動取得ファビコン';
+}
+
+function closeEdit() {
+  document.getElementById('editModal').classList.remove('show');
+  editingIndex = -1;
+}
+
+function editPickIcon() {
+  if (editingIndex >= 0) openIconPicker(editingIndex);
+}
+
+function editClearIcon() {
+  if (editingIndex < 0) return;
+  clearBookmarkIcon();
+  renderEditIcon();
+}
+
+function moveEdit(direction) {
+  if (editingIndex < 0) return;
+  moveInCategory(editingIndex, direction);
+  render();
+}
+
+function saveEdit() {
+  if (editingIndex < 0) return;
+  const s = bookmarks[editingIndex];
+  const name = document.getElementById('editName').value.trim();
+  const url = document.getElementById('editUrl').value.trim();
+  if (!name || !url) { showToast('名前とURLを入力してください'); return; }
+  if (url !== s.url && bookmarks.some((x, idx) => idx !== editingIndex && x.url === url)) {
+    showToast('このURLは既に登録されています'); return;
+  }
+  const cat = document.getElementById('editCat').value;
+  if (url !== s.url) updateUrl(editingIndex, url);
+  s.name = name;
+  if (cat !== getCat(editingIndex)) updateCategory(editingIndex, cat);
+  const wantStar = document.getElementById('editStar').checked;
+  if (wantStar && !s.starred) starBookmark(editingIndex);
+  if (!wantStar && s.starred) unstarBookmark(editingIndex);
+  markDirty();
+  closeEdit();
+  render();
+  saveAll();
+}
+
+function deleteEdit() {
+  if (editingIndex < 0) return;
+  const i = editingIndex;
+  closeEdit();
+  removeBookmark(i);
 }
 
 function showCatEditor() {
@@ -1069,6 +1281,7 @@ function renameCategory(inputEl) {
   Object.keys(catCollapsed).forEach(k => {
     if (k === oldName) { catCollapsed[newName] = catCollapsed[k]; delete catCollapsed[k]; }
   });
+  if (collapsed.has(oldName)) { collapsed.delete(oldName); collapsed.add(newName); saveCollapsed(); }
   catOrder = catOrder.map(c => c === oldName ? newName : c);
   if (itemOrder[oldName]) {
     itemOrder[newName] = itemOrder[oldName];
@@ -1088,6 +1301,8 @@ function deleteCategory(catName) {
   bookmarks.forEach(s => { if (s.category === catName) s.category = ''; });
   allCategories = allCategories.filter(c => c !== catName);
   delete catCollapsed[catName];
+  if (collapsed.has(catName)) { collapsed.delete(catName); saveCollapsed(); }
+  if (activeChip === catName) activeChip = '__all__';
   catOrder = catOrder.filter(c => c !== catName);
   delete itemOrder[catName];
   collectCategories();
@@ -1457,7 +1672,8 @@ function saveAll() {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({bookmarks, cat_order: catOrder, starred_order: starredOrder, categories: allCategories, favicon_mode: faviconMode, item_order: itemOrder}),
   }).then(r => r.json()).then(() => {
-    document.getElementById('saveBtn').style.display = 'none';
+    const b = document.getElementById('saveBtn');
+    if (b) b.style.display = 'none';
     dirty = false;
     showToast('\u4fdd\u5b58\u3057\u307e\u3057\u305F');
   });
@@ -1511,7 +1727,8 @@ window.addEventListener('beforeunload', e => {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    if (document.getElementById('iconPickerModal').classList.contains('show')) closeIconPicker();
+    if (document.getElementById('editModal').classList.contains('show')) closeEdit();
+    else if (document.getElementById('iconPickerModal').classList.contains('show')) closeIconPicker();
     else if (document.getElementById('iconStoreModal').classList.contains('show')) closeIconManager();
     else if (document.getElementById('syncModal').classList.contains('show')) closeSyncSettings();
   }
@@ -1706,6 +1923,9 @@ async function stopSync() {
   }
   b.disabled = false; b.textContent = '同期を停止';
 }
+
+document.getElementById('qa-url').addEventListener('input', updateQuickPreview);
+document.getElementById('search').addEventListener('input', e => { query = e.target.value.trim(); render(); });
 
 fetch('/api/version').then(res => res.json()).then(v => { document.getElementById('appVersion').textContent = 'v.' + v.version; }).catch(() => {});
 
