@@ -12,7 +12,7 @@ from flask import Flask, Response, request, jsonify
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bookmarks.json")
 APP_PATH = os.path.abspath(__file__)
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/hirogura/selfmark/main"
@@ -317,6 +317,8 @@ HTML = r"""<!DOCTYPE html>
   .modal-overlay{position:fixed;inset:0;background:rgba(15,15,35,.55);display:none;
        align-items:center;justify-content:center;z-index:200;padding:20px}
   .modal-overlay.show{display:flex}
+  /* 編集モーダルから開くアイコン選択は常に手前で表示する */
+  #iconPickerModal{z-index:220}
   .modal{background:var(--surface);border-radius:14px;padding:22px;width:640px;max-width:100%;
        max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
   .modal h3{font-size:15px;margin-bottom:6px;font-weight:700}
@@ -1727,8 +1729,8 @@ window.addEventListener('beforeunload', e => {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    if (document.getElementById('editModal').classList.contains('show')) closeEdit();
-    else if (document.getElementById('iconPickerModal').classList.contains('show')) closeIconPicker();
+    if (document.getElementById('iconPickerModal').classList.contains('show')) closeIconPicker();
+    else if (document.getElementById('editModal').classList.contains('show')) closeEdit();
     else if (document.getElementById('iconStoreModal').classList.contains('show')) closeIconManager();
     else if (document.getElementById('syncModal').classList.contains('show')) closeSyncSettings();
   }
