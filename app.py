@@ -12,7 +12,7 @@ from flask import Flask, Response, request, jsonify
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bookmarks.json")
 APP_PATH = os.path.abspath(__file__)
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 SERVICE_NAME = os.environ.get("SELFMARK_SERVICE", "selfmark")
 GITHUB_RAW_APP = "https://raw.githubusercontent.com/hirogura/selfmark/main/app.py"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/hirogura/selfmark/main"
@@ -289,7 +289,7 @@ HTML = r"""<!DOCTYPE html>
   .card.tile:hover{border-color:var(--accent);box-shadow:0 2px 8px rgba(20,40,80,.08)}
   .card.tile.dragging{opacity:.4}
   .card.tile.drag-over{border-top:3px solid var(--accent)}
-  .tile .icon{width:36px;height:36px;margin:0 auto;display:flex;align-items:center;justify-content:center}
+  .tile .icon{width:36px;height:36px;margin:0 auto;display:flex;align-items:center;justify-content:center;cursor:pointer}
   .tile .icon img{width:36px;height:36px;border-radius:8px;object-fit:contain;
        background:#fff;border:1px solid #eef0f4;cursor:pointer}
   .tile .letter{width:36px;height:36px;border-radius:8px;background:var(--accent-soft);
@@ -1053,6 +1053,17 @@ function tileIconHtml(s) {
   return letterHtml;  // アイコンが無い場合は文字タイル
 }
 
+// タイルのアイコンをクリックしたらブックマークを新しいタブで開く
+let lastBookmarkOpenAt = 0;
+function openBookmarkUrl(i) {
+  const s = bookmarks[i];
+  if (!s || !s.url) return;
+  const now = Date.now();
+  if (now - lastBookmarkOpenAt < 400) return;  // ダブルクリックによる二重起動を防ぐ
+  lastBookmarkOpenAt = now;
+  window.open(s.url, '_blank', 'noopener,noreferrer');
+}
+
 function renderCard(s, i, compact) {
   const isStarred = !!s.starred;
   const dragAttrs = compact
@@ -1064,7 +1075,7 @@ function renderCard(s, i, compact) {
     ondblclick="openEdit(${i})" title="${escapeHtml(s.name)}">
     <button class="edit" onclick="event.stopPropagation();openEdit(${i})" title="編集">✎</button>
     <button class="star${isStarred ? ' on' : ''}" onclick="event.stopPropagation();${starAction}" title="お気に入り">★</button>
-    <div class="icon">${tileIconHtml(s)}</div>
+    <div class="icon" onclick="event.stopPropagation();openBookmarkUrl(${i})" ondblclick="event.stopPropagation()" title="新しいタブで開く">${tileIconHtml(s)}</div>
     <div class="name">${escapeHtml(s.name)}</div>
   </div>`;
 }
