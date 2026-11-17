@@ -64,8 +64,6 @@ sudo systemctl restart selfmark
 - ブラウザ上から編集・削除・お気に入り登録が可能
 - v17 の設定画面の「アイコンを再取得」で拡張機能内のアイコンを再取得（Chrome 全体のキャッシュやサーバ保存画像は削除しません）
 
-<img width="443" height="512" alt="Image" src="https://github.com/user-attachments/assets/84f03329-058d-48e1-af34-6808a86024ab" />
-
 **導入方法**
 
 1. 拡張機能 ZIP をダウンロードします。
